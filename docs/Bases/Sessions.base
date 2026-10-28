@@ -1,0 +1,26 @@
+# Dated session notes, newest first by filename (names begin with YYYY-MM-DD).
+filters:
+  and:
+    - file.inFolder("docs/Journal/Sessions")
+views:
+  - type: table
+    name: Recent
+    limit: 12
+    order:
+      - file.name
+      - date
+      - updated
+      - tags
+    sort:
+      - property: file.name
+        direction: DESC
+  - type: table
+    name: All sessions
+    order:
+      - file.name
+      - date
+      - status
+      - tags
+    sort:
+      - property: file.name
+        direction: DESC

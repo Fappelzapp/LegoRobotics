@@ -1,0 +1,40 @@
+# Maintenance views: notes that are missing required frontmatter.
+# Templates are excluded on purpose — they are structures, not evidence.
+filters:
+  and:
+    - file.inFolder("docs")
+    - file.ext == "md"
+    - not:
+        - file.inFolder("docs/Templates")
+views:
+  - type: table
+    name: Missing status
+    filters:
+      and:
+        - status.isEmpty()
+    order:
+      - file.name
+      - file.folder
+      - type
+      - updated
+    sort:
+      - property: file.folder
+        direction: ASC
+  - type: table
+    name: Missing updated
+    filters:
+      and:
+        - updated.isEmpty()
+    order:
+      - file.name
+      - file.folder
+      - status
+      - type
+  - type: table
+    name: No frontmatter
+    filters:
+      and:
+        - type.isEmpty()
+    order:
+      - file.name
+      - file.folder

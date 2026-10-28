@@ -1,0 +1,539 @@
+# Archive of the program pasted by the user on 2026-10-28.
+# Not imported or run. Kept for comparison/rollback before the requested refactor.
+from pybricks.hubs import PrimeHub
+from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor, ForceSensor
+from pybricks.parameters import Button, Color, Direction, Port, Side, Stop, Axis
+from pybricks.robotics import DriveBase
+from pybricks.tools import wait, StopWatch
+
+hub = PrimeHub(top_side=Axis.Z, front_side=Axis.Y)
+hub.light.on(Color.MAGENTA)
+hub.system.set_stop_button(Button.BLUETOOTH)
+timer = StopWatch()
+
+rechts = Motor(Port.A)
+links = Motor(Port.E)
+modull = Motor(Port.F, Direction.CLOCKWISE, reset_angle=True, profile=None)
+modulr = Motor(Port.B, Direction.CLOCKWISE, reset_angle=True, profile=None)
+modull.control.stall_tolerances(300, 50)
+
+motors = DriveBase(links, rechts, wheel_diameter=62.4, axle_track=106)
+hub.imu.reset_heading(0)
+stp = 0
+speed = -69
+pi = 3.1415926536
+steering = 0
+global kurvejanein
+kurvejanein = 0
+
+
+def motors_pid(stp, speed, amount):
+    global kurvejanein
+    ric = 0
+    speed = speed * -1
+    kp = 4
+    ki = 0
+    kd = 1
+    err = 0
+    errsum = 0
+    erro = 0
+    derr = 0
+    strecke = 0
+    speed_local = speed
+    anfahren = 0
+    links.reset_angle(0)
+    rechts.reset_angle(0)
+    if kurvejanein == 2:
+        strecke = 100000
+    else:
+        speed = speed
+    while strecke < amount or kurvejanein == 2:
+        reststrecke = amount - strecke
+        print(hub.imu.heading())
+        if kurvejanein == 0:
+            if reststrecke < 1:
+                speed_local = speed_local
+            elif reststrecke < abs(speed / 10):
+                speed_local = int((abs(speed) - (abs(speed) / ((reststrecke + 10) / 5))) * (speed / abs(speed)))
+            elif anfahren < int(abs(speed / 15)):
+                anfahren += 1
+                speed_local = int((5 * anfahren) * (speed / abs(speed)))
+            else:
+                speed_local = speed
+        else:
+            speed = speed
+        g = hub.imu.heading()
+        if speed > 0:
+            err = g - stp
+            print("vorwärst")
+        else:
+            err = stp - g
+            print("rückwärts")
+        derr = err - erro
+        erro = err
+        errsum += err
+        ric = int(kp * err + ki * errsum + kd * derr)
+        ric = int(ric * (speed / abs(speed)))
+        motors.drive(ric, speed_local)
+        if kurvejanein == 0:
+            degLinks = links.angle()
+            degRechts = rechts.angle()
+            degMittel = (degLinks - degRechts) / 2
+            strecke = (abs(degMittel) / 360) * 5.56 * pi
+        else:
+            speed = speed
+        if kurvejanein == 2:
+            kurvejanein = 0
+        else:
+            speed = speed
+
+
+def motors_kurve1(target_angle, speed, steering):
+    MIN_SPEED = 50
+    while True:
+        current_angle = hub.imu.heading()
+        remaining = target_angle - current_angle
+        if abs(remaining) <= 3:
+            break
+        if abs(remaining) < 10:
+            drive_speed = max(MIN_SPEED, abs(remaining) / 10 * abs(speed))
+        else:
+            drive_speed = abs(speed)
+        drive_speed *= 1 if speed > 0 else -1
+        motors.drive(-steering, -drive_speed)
+        wait(20)
+    motors.stop()
+    print("Endwinkel:", hub.imu.heading())
+
+
+def motors_kurve(stp, speed, steering):
+    geschwindigkeit = speed
+    if speed > 0:
+        if stp > 0:
+            while hub.imu.heading() < stp:
+                if stp - hub.imu.heading() < 10:
+                    speed = stp - hub.imu.heading() + 30
+                motors.drive(steering, -speed)
+        else:
+            while hub.imu.heading() > stp:
+                if stp - hub.imu.heading() > 10:
+                    speed = (stp + hub.imu.heading()) * -1 + 30
+                motors.drive(steering, -speed)
+    else:
+        if stp > 0:
+            while hub.imu.heading() * -1 < stp:
+                if stp - hub.imu.heading() < 10:
+                    speed = stp - hub.imu.heading() - 30
+                motors.drive(steering, -speed)
+        else:
+            while hub.imu.heading() * -1 > stp:
+                if (stp + hub.imu.heading()) * -1 < 20:
+                    geschwindigkeit = stp + hub.imu.heading() - 30
+                    print("stop")
+                motors.drive(steering, -geschwindigkeit)
+                print(geschwindigkeit, hub.imu.heading())
+    motors.stop()
+    print(hub.imu.heading())
+
+
+def ausrichten1(stp):
+    g = int(hub.imu.heading())
+    while g != stp:
+        print(hub.imu.heading())
+        if abs(g - stp) > 1800:
+            if g < stp:
+                speed = int((stp - g - 360) * -3) + 30
+            elif g > stp:
+                speed = int((stp - g + 360) * -3) - 30
+        else:
+            if g < stp:
+                speed = int((stp - g) * -3) - 30
+            elif g > stp:
+                speed = int((stp - g) * -3) + 30
+        links.run(speed)
+        rechts.run(speed)
+        g = int(hub.imu.heading())
+    motors.stop()
+
+
+def ausrichten2(stp):
+    g = int(hub.imu.heading())
+    while g != stp:
+        print(hub.imu.heading())
+        if abs(g - stp) > 1800:
+            if g < stp:
+                speed = int((stp - g - 360) * -5) + 30
+            elif g > stp:
+                speed = int((stp - g + 360) * -5) - 30
+        else:
+            if g < stp:
+                speed = int((stp - g) * -5) - 30
+            elif g > stp:
+                speed = int((stp - g) * -5) + 30
+        links.run(speed)
+        rechts.run(speed)
+        g = int(hub.imu.heading())
+    motors.stop()
+
+
+def ausrichten3(stp):
+    g = int(hub.imu.heading())
+    while g != stp:
+        print(hub.imu.heading())
+        if abs(g - stp) > 1800:
+            if g < stp:
+                speed = int((stp - g - 360) * -20) + 30
+            elif g > stp:
+                speed = int((stp - g + 360) * -20) - 30
+        else:
+            if g < stp:
+                speed = int((stp - g) * -20) - 30
+            elif g > stp:
+                speed = int((stp - g) * -20) + 30
+        links.run(speed)
+        rechts.run(speed)
+        g = int(hub.imu.heading())
+    motors.stop()
+
+kstp = 0
+kspeed = 0
+radius = 0
+kcounter = 0
+
+
+def motors_curve_gyro(end_angle_deg, radius_mm, max_speed_mm_s):
+    axle_track = 120
+    outer_radius = radius_mm + axle_track / 2
+    inner_radius = radius_mm - axle_track / 2
+    ratio = inner_radius / outer_radius
+    speed = 0
+    accel_step = 50
+    dt = 20
+    print(f"Starte Kurve: {end_angle_deg}°, Radius {radius_mm} mm, Max-Speed {max_speed_mm_s} mm/s")
+    while True:
+        current_angle = abs(hub.imu.heading())
+        target_angle = abs(end_angle_deg)
+        remaining_angle = target_angle - current_angle
+        if remaining_angle > target_angle / 2:
+            speed = min(speed + accel_step, max_speed_mm_s)
+        else:
+            remaining_angle = abs(target_angle - current_angle)
+            speed = max((remaining_angle / target_angle) ** 0.4 * max_speed_mm_s, 50)
+        if end_angle_deg > 0:
+            left_speed = speed
+            right_speed = speed * ratio
+        else:
+            left_speed = speed * ratio
+            right_speed = speed
+        links.run(-left_speed)
+        rechts.run(right_speed)
+        if current_angle >= target_angle:
+            break
+        wait(dt)
+    links.stop()
+    rechts.stop()
+    print(f"Kurve beendet bei Gyro-Winkel: {hub.imu.heading():.1f}°")
+
+'''
+# Disabled legacy module helpers, copied from the paste.
+def modulr_links(power):
+    modulr.start_at_power(-power)
+    wait_for_seconds(0.2)
+    wait_until(modulr.get_speed, equal_to, 0)
+    modulr.stop()
+def modulr_rechts(power):
+    modulr.start_at_power(power)
+    wait_for_seconds(0.2)
+    wait_until(modulr.get_speed, equal_to, 0)
+    modulr.stop()
+def modull_links(power):
+    modull.start_at_power(-power)
+    wait_for_seconds(0.2)
+    wait_until(modull.get_speed, equal_to, 0)
+    modull.stop()
+def modull_rechts(power):
+    modull.start_at_power(power)
+    wait_for_seconds(0.2)
+    wait_until(modull.get_speed, equal_to, 0)
+    modull.stop()
+'''
+
+# Saison25/26 starts now!!!! 17.09.2025
+# Weg 1 (Steine)
+while Button.RIGHT not in hub.buttons.pressed():
+    pass
+while Button.LEFT not in hub.buttons.pressed():
+    pass
+hub.speaker.beep(100)
+hub.imu.reset_heading(0)
+motors_pid(0, -400, 2)
+motors_pid(0, 500, 21)
+ausrichten2(-30)
+motors_pid(-30, 500, 30)
+ausrichten2(35)
+motors_pid(35, 500, 8)
+motors.stop()
+motors_kurve1(45, 100, 10)
+timer.reset()
+while timer.time() < 1000:
+    links.run(-200)
+    rechts.run(200)
+links.stop()
+rechts.stop()
+motors.stop()
+modulr.run_angle(500, 520)
+modull.run_angle(400, -200, wait=False)
+wait(1000)
+modulr.run_angle(500, -520)
+motors_pid(45, -200, 12)
+motors.stop()
+ausrichten2(27)
+motors_pid(27, -700, 2)
+ausrichten2(-25)
+motors_pid(-25, -900, 55)
+motors.stop()
+
+# Weg 2 (Umarmung)
+while Button.RIGHT not in hub.buttons.pressed():
+    pass
+while Button.LEFT not in hub.buttons.pressed():
+    pass
+hub.speaker.beep(100)
+hub.imu.reset_heading(0)
+motors_pid(0, -400, 2)
+motors_pid(0, 400, 4)
+ausrichten2(-45)
+motors_pid(-45, 500, 30)
+motors_pid(-45, 300, 10)
+motors.stop()
+modulr.run_angle(600, 1000, wait=False)
+modull.run_angle(-600, 1100)
+wait(100)
+modulr.run_angle(600, -200, wait=False)
+modull.run_angle(800, 1100)
+modulr.stop()
+modull.stop()
+motors_pid(-45, -400, 15)
+ausrichten2(-65)
+motors_pid(-65, -900, 30)
+motors.stop()
+
+ausgewaehlter_weg = None
+while True:
+    gedrueckte_tasten = hub.buttons.pressed()
+    if Button.LEFT in gedrueckte_tasten:
+        while Button.LEFT in hub.buttons.pressed():
+            pass
+        while Button.LEFT not in hub.buttons.pressed():
+            pass
+        ausgewaehlter_weg = "links"
+        break
+    elif Button.RIGHT in gedrueckte_tasten:
+        while Button.RIGHT in hub.buttons.pressed():
+            pass
+        while Button.RIGHT not in hub.buttons.pressed():
+            pass
+        ausgewaehlter_weg = "rechts"
+        break
+
+if ausgewaehlter_weg == "links":
+    hub.speaker.beep(100)
+    hub.imu.reset_heading(0)
+    motors_pid(0, -400, 2)
+    motors_pid(0, 400, 37.5)
+    motors.stop()
+    for i in range(4):
+        modulr.run_angle(850, -150)
+        wait(100)
+        modulr.run_angle(850, 170)
+        wait(100)
+    ausrichten2(0)
+    motors_pid(0, 400, 13.5)
+    motors.stop()
+    ausrichten2(-40)
+    motors_pid(-40, 400, 14)
+    ausrichten2(-90)
+    motors_pid(-90, 400, 22)
+    motors.stop()
+    wait(500)
+    ausrichten1(0)
+    motors_pid(0, 150, 10)
+    motors.stop()
+    modull.run_angle(100, 600)
+    motors_pid(0, -400, 15)
+    motors.stop()
+    modull.run_angle(200, -600, wait=False)
+    wait(700)
+    motors_pid(0, 200, 15)
+    wait(300)
+    motors_pid(0, -500, 5)
+    motors.stop()
+    wait(200)
+    ausrichten1(-90)
+    motors_pid(-90, 700, 13)
+    motors.stop()
+    wait(200)
+    ausrichten2(-150)
+    motors_pid(-150, 700, 27.5)
+    ausrichten2(-105)
+    motors_pid(-105, 900, 60)
+    motors.stop()
+elif ausgewaehlter_weg == "rechts":
+    hub.speaker.beep(100)
+    hub.imu.reset_heading(0)
+    motors_pid(0, -400, 2)
+    motors_pid(0, 400, 37.5)
+    motors.stop()
+    for i in range(4):
+        modulr.run_angle(850, -150)
+        wait(100)
+        modulr.run_angle(850, 170)
+        wait(100)
+    ausrichten2(0)
+    motors_pid(0, 400, 13.5)
+    motors.stop()
+    ausrichten2(-40)
+    motors_pid(-40, 400, 14)
+    ausrichten2(-90)
+    motors_pid(-90, 400, 22)
+    motors.stop()
+    wait(500)
+    ausrichten1(0)
+    motors_pid(0, 150, 10)
+    motors.stop()
+    wait(500)
+    motors_pid(0, -500, 5)
+    motors.stop()
+    wait(200)
+    ausrichten1(-90)
+    motors_pid(-90, 700, 13)
+    motors.stop()
+    wait(200)
+    ausrichten2(-150)
+    motors_pid(-150, 700, 27.5)
+    ausrichten2(-105)
+    motors_pid(-105, 900, 60)
+    motors.stop()
+
+# Weg 4 (Schwinger)
+while Button.RIGHT not in hub.buttons.pressed():
+    pass
+while Button.LEFT not in hub.buttons.pressed():
+    pass
+hub.speaker.beep(100)
+hub.imu.reset_heading(0)
+motors_pid(0, -400, 27)
+modull.run_angle(-900, 450, wait=False)
+ausrichten2(35)
+motors_pid(35, -400, 21)
+ausrichten2(90)
+motors_pid(90, 400, 20)
+motors.stop()
+modulr.run_angle(400, 380)
+modull.run_angle(900, 600, wait=False)
+modulr.run_angle(400, -500)
+modull.run_angle(-900, 500)
+modulr.run_angle(400, -350, wait=False)
+motors_pid(90, -400, 14.5)
+ausrichten2(20)
+motors_pid(20, 800, 45)
+motors.stop()
+
+# Weg 5 (schwarz)
+while Button.RIGHT not in hub.buttons.pressed():
+    pass
+while Button.LEFT not in hub.buttons.pressed():
+    pass
+hub.speaker.beep(100)
+hub.imu.reset_heading(0)
+motors_pid(5, 400, 45)
+motors.stop()
+# modull.run_angle(-600, 400)
+modull.run_until_stalled(-600, duty_limit=50)
+motors_pid(2, 500, 4)
+motors.stop()
+modulr.run_angle(-800, 900, wait=False)
+timer.reset()
+while timer.time() < 1000:
+    links.run(-100)
+    rechts.run(100)
+modull.run_angle(800, 860)
+motors_pid(5, -500, 55)
+motors.stop()
+# motors_pid(5, -500, 30)
+# rechts.run_angle(400, -2000)
+
+# Weg 6 (Lore zum anderen Team)
+while Button.RIGHT not in hub.buttons.pressed():
+    pass
+while Button.LEFT not in hub.buttons.pressed():
+    pass
+hub.speaker.beep(100)
+hub.imu.reset_heading(0)
+motors_pid(0, 400, 2)
+motors_pid(0, -600, 43)
+ausrichten2(90)
+motors_pid(90, -600, 23.5)
+ausrichten2(180)
+motors_pid(180, -600, 5.25)
+motors.stop()
+modulr.run_angle(400, -200)
+motors_pid(180, 300, 6)
+motors.stop()
+modulr.run_angle(200, 140)
+motors_pid(180, 250, 20)
+motors.stop()
+modull.run_angle(1200, -1000)
+wait(200)
+modull.run_angle(500, 400)
+modull.run_angle(1200, -400)
+wait(200)
+modull.run_angle(500, 800)
+motors_pid(180, -600, 3)
+modulr.run_angle(150, -200, wait=False)
+ausrichten2(90)
+motors.stop()
+motors_pid(90, 800, 15)
+ausrichten2(30)
+motors_pid(20, 900, 40)
+motors.stop()
+
+# Weg 7 (Sachen in Kreis)
+while Button.RIGHT not in hub.buttons.pressed():
+    pass
+while Button.LEFT not in hub.buttons.pressed():
+    pass
+hub.speaker.beep(100)
+hub.imu.reset_heading(0)
+motors_pid(0, -400, 2)
+motors_pid(0, 500, 29)
+ausrichten1(70)
+motors_pid(70, 200, 16)
+motors.stop()
+modull.run_angle(1000, 450, wait=False)
+modulr.run_angle(500, -350)
+motors_pid(70, 200, 5)
+motors.stop()
+modulr.run_angle(500, 250)
+motors_pid(70, -300, 25)
+motors.stop()
+ausrichten2(27)
+motors_pid(27, 500, 27)
+motors.stop()
+
+'''
+# test (disabled in original)
+motors_pid(0, 700, 50)
+ausrichten2(90)
+motors_pid(90, 700, 50)
+ausrichten2(180)
+motors_pid(180, 700, 50)
+ausrichten2(270)
+motors_pid(270, 700, 50)
+ausrichten2(360)
+ausrichten2(0)
+motors_pid(0, 700, 50)
+ausrichten2(180)
+motors_pid(180, 700, 50)
+ausrichten2(360)
+'''

@@ -1,0 +1,2314 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>How your PID code works — SPIKE Prime</title>
+<meta name="description" content="A beginner-friendly, hands-on explanation of the motors_pid() function in our SPIKE Prime PyBricks program.">
+<style>
+/* ---------------------------------------------------------------- tokens */
+:root{
+  --bg:#0c0d11; --bg2:#101218; --panel:#151821; --panel2:#1b1f2a; --panel3:#212633;
+  --line:rgba(255,255,255,.085); --line2:rgba(255,255,255,.17);
+  --tx:#e9ecf4; --tx2:#aab2c2; --tx3:#78818f;
+  --mag:#ff54b4; --mag-d:#c2187a; --mag-soft:rgba(255,84,180,.14);
+  --cy:#3fd6e8; --cy-soft:rgba(63,214,232,.13);
+  --gr:#4bd68b; --gr-soft:rgba(75,214,139,.13);
+  --am:#ffb020; --am-soft:rgba(255,176,32,.13);
+  --rd:#ff5f6d; --rd-soft:rgba(255,95,109,.13);
+  --code:#08090d;
+  --shadow:0 18px 40px -18px rgba(0,0,0,.75);
+  --r:16px; --r-s:10px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;
+}
+html[data-theme="light"]{
+  --bg:#f4f5fa; --bg2:#eceef6; --panel:#ffffff; --panel2:#f7f8fc; --panel3:#eef0f7;
+  --line:rgba(12,18,32,.10); --line2:rgba(12,18,32,.20);
+  --tx:#151b28; --tx2:#4b5568; --tx3:#79839a;
+  --mag:#c2187a; --mag-d:#8d1058; --mag-soft:rgba(194,24,122,.10);
+  --cy:#0a8fa3; --cy-soft:rgba(10,143,163,.10);
+  --gr:#128a52; --gr-soft:rgba(18,138,82,.10);
+  --am:#a86a00; --am-soft:rgba(168,106,0,.12);
+  --rd:#c02a35; --rd-soft:rgba(192,42,53,.10);
+  --code:#10141d;
+  --shadow:0 18px 36px -22px rgba(20,30,60,.45);
+}
+/* ---------------------------------------------------------------- base */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:84px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; background:var(--bg); color:var(--tx);
+  font-family:var(--sans); font-size:16.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(900px 520px at 78% -12%, var(--mag-soft), transparent 62%),
+                   radial-gradient(700px 420px at 6% 2%, var(--cy-soft), transparent 60%);
+  background-repeat:no-repeat;
+}
+h1,h2,h3,h4{line-height:1.22; margin:0 0 .5em; letter-spacing:-.015em}
+h1{font-size:clamp(2rem,5vw,3.15rem); font-weight:800}
+h2{font-size:clamp(1.45rem,2.6vw,2rem); font-weight:760}
+h3{font-size:1.14rem; font-weight:700}
+p{margin:0 0 1em}
+a{color:var(--cy)}
+b,strong{font-weight:680}
+code{font-family:var(--mono); font-size:.88em; background:var(--panel3); padding:.12em .38em; border-radius:5px; border:1px solid var(--line)}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:12px;top:12px;z-index:99;background:var(--panel);padding:10px 16px;border-radius:8px}
+:focus-visible{outline:2px solid var(--cy); outline-offset:3px; border-radius:4px}
+
+/* ---------------------------------------------------------------- topbar */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; gap:14px;
+  padding:10px clamp(14px,3vw,34px);
+  background:var(--bg);
+  background:color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter:blur(14px) saturate(140%);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:750;letter-spacing:-.01em;white-space:nowrap}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--mag);box-shadow:0 0 14px var(--mag)}
+.brand small{display:block;font-weight:500;font-size:.7rem;color:var(--tx3);letter-spacing:.06em;text-transform:uppercase}
+.nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-left:auto;padding:2px}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  color:var(--tx2); text-decoration:none; font-size:.83rem; font-weight:600;
+  padding:6px 11px; border-radius:99px; white-space:nowrap; border:1px solid transparent;
+}
+.nav a:hover{color:var(--tx); background:var(--panel2)}
+.nav a.on{color:var(--tx); background:var(--panel2); border-color:var(--line)}
+.tbtn{
+  flex:none; width:36px;height:36px;border-radius:10px;cursor:pointer;
+  background:var(--panel2); color:var(--tx); border:1px solid var(--line); font-size:1rem;
+}
+.tbtn:hover{border-color:var(--line2)}
+
+/* ---------------------------------------------------------------- layout */
+main{max-width:1080px; margin:0 auto; padding:0 clamp(14px,3vw,28px) 40px}
+section{padding:clamp(44px,7vw,76px) 0; border-top:1px solid var(--line)}
+section:first-of-type{border-top:0}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:.72rem;font-weight:750;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--mag); margin-bottom:14px;
+}
+.eyebrow::before{content:"";width:22px;height:2px;background:var(--mag);border-radius:2px}
+.lede{font-size:1.1rem; color:var(--tx2); max-width:64ch}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:clamp(16px,2.4vw,26px); box-shadow:var(--shadow)}
+.grid{display:grid; gap:16px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.muted{color:var(--tx2)}
+.small{font-size:.87rem}
+.tiny{font-size:.78rem;color:var(--tx3)}
+hr.sep{border:0;border-top:1px solid var(--line);margin:22px 0}
+
+/* ---------------------------------------------------------------- badges */
+.b{
+  display:inline-flex;align-items:center;gap:5px;font-size:.68rem;font-weight:750;
+  letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:6px;
+  border:1px solid currentColor; white-space:nowrap; vertical-align:middle;
+}
+.b-doc{color:var(--cy);background:var(--cy-soft)}
+.b-inf{color:var(--am);background:var(--am-soft)}
+.b-meas{color:var(--gr);background:var(--gr-soft)}
+.b-not{color:var(--rd);background:var(--rd-soft)}
+
+/* ---------------------------------------------------------------- hero */
+.hero{padding-top:clamp(34px,6vw,60px)}
+.hero h1 span{color:var(--mag)}
+.hero .lede{font-size:1.16rem}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.chip{
+  display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:99px;
+  background:var(--panel2);border:1px solid var(--line);font-size:.82rem;color:var(--tx2);font-weight:600;
+}
+.chip b{color:var(--tx)}
+
+/* start-here panel */
+.start{
+  margin-top:30px; border-radius:22px; padding:clamp(18px,3vw,30px);
+  background:linear-gradient(155deg, var(--panel2), var(--panel));
+  border:1px solid var(--line2); box-shadow:var(--shadow);
+  position:relative; overflow:hidden;
+}
+.start::after{
+  content:""; position:absolute; inset:auto -70px -110px auto; width:280px;height:280px;
+  background:radial-gradient(circle, var(--mag-soft), transparent 70%); pointer-events:none; z-index:0;
+}
+.start h2{font-size:1.3rem;margin-bottom:6px}
+ol.steps{counter-reset:s; list-style:none; margin:16px 0 0; padding:0; display:grid; gap:11px}
+ol.steps li{counter-increment:s; display:flex; gap:13px; align-items:flex-start; position:relative; z-index:1}
+ol.steps li::before{
+  content:counter(s); flex:none; width:26px;height:26px;border-radius:50%;
+  display:grid;place-items:center; font-size:.8rem;font-weight:800;
+  background:var(--mag); color:#fff; margin-top:1px;
+}
+html[data-theme="light"] ol.steps li::before{color:#fff}
+ol.steps li div{min-width:0}
+.assure{
+  position:relative; z-index:1;
+  margin-top:20px; display:flex; gap:10px; align-items:flex-start;
+  padding:12px 15px; border-radius:12px;
+  background:var(--panel);
+  background:color-mix(in srgb, var(--gr) 9%, var(--panel));
+  border:1px solid color-mix(in srgb, var(--gr) 34%, transparent); font-size:.9rem;
+}
+.assure .ico{color:var(--gr);flex:none;font-weight:900}
+
+/* choice cards */
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:26px}
+.choice{
+  display:block;text-decoration:none;color:inherit;padding:18px;border-radius:14px;
+  background:var(--panel); border:1px solid var(--line); transition:.16s;
+}
+.choice:hover{border-color:var(--mag); transform:translateY(-2px)}
+.choice .k{font-size:.7rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--mag)}
+.choice h3{margin:6px 0 4px;font-size:1rem}
+.choice p{margin:0;font-size:.87rem;color:var(--tx2)}
+
+/* ---------------------------------------------------------------- pid blocks */
+.pidrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:20px 0}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.pcard .letter{
+  width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  font-family:var(--mono);font-weight:800;font-size:1.05rem;margin-bottom:10px;
+}
+.pcard.p .letter{background:var(--mag-soft);color:var(--mag);border:1px solid color-mix(in srgb, var(--mag) 40%, transparent)}
+.pcard.i .letter{background:var(--cy-soft);color:var(--cy);border:1px solid color-mix(in srgb, var(--cy) 40%, transparent)}
+.pcard.d .letter{background:var(--am-soft);color:var(--am);border:1px solid color-mix(in srgb, var(--am) 40%, transparent)}
+.pcard h3{font-size:.98rem;margin-bottom:4px}
+.pcard p{font-size:.87rem;color:var(--tx2);margin:0}
+.pcard .val{margin-top:10px;font-family:var(--mono);font-size:.8rem;color:var(--tx3)}
+
+.formula{
+  font-family:var(--mono); font-size:clamp(.8rem,2vw,1.02rem); text-align:center;
+  padding:18px 12px; border-radius:14px; background:var(--code); color:#e7ecf5;
+  border:1px solid var(--line); overflow-x:auto; white-space:nowrap;
+}
+.formula .o{color:var(--mag)} .formula .n{color:#8be9a8} .formula .c{color:#7fb2ff}
+
+.diagram{width:100%;height:auto;display:block;margin:8px 0}
+
+/* ---------------------------------------------------------------- sim */
+.simwrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:18px;align-items:start}
+@media (max-width:880px){.simwrap{grid-template-columns:1fr}}
+.fieldbox{position:relative;border-radius:var(--r);overflow:hidden;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+#simCanvas{display:block;width:100%;height:min(62vh,540px);min-height:380px;touch-action:pan-y}
+.chartbox{margin-top:12px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);padding:10px 10px 4px}
+#chartCanvas{display:block;width:100%;height:150px}
+.chartcap{display:flex;justify-content:space-between;gap:10px;font-size:.74rem;color:var(--tx3);padding:2px 4px 6px}
+.controls{display:grid;gap:14px}
+.ctlhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px}
+.row label{font-size:.86rem;font-weight:640;color:var(--tx2)}
+.row output{font-family:var(--mono);font-size:.82rem;color:var(--tx);font-variant-numeric:tabular-nums;background:var(--panel3);padding:1px 8px;border-radius:6px;border:1px solid var(--line)}
+.row input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--mag);height:22px;margin:0}
+.row .hint{grid-column:1/-1;font-size:.72rem;color:var(--tx3);margin-top:-4px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{
+  appearance:none;border:1px solid var(--line2);background:var(--panel2);color:var(--tx);
+  font:inherit;font-size:.87rem;font-weight:650;padding:9px 15px;border-radius:10px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px; transition:.14s;
+}
+.btn:hover{background:var(--panel3)}
+.btn.primary{background:var(--mag);border-color:var(--mag);color:#fff}
+html[data-theme="light"] .btn.primary{color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.preset{
+  font:inherit;font-size:.76rem;font-weight:640;padding:6px 10px;border-radius:99px;cursor:pointer;
+  background:transparent;color:var(--tx2);border:1px solid var(--line);transition:.14s;
+}
+.preset:hover{color:var(--tx);border-color:var(--line2)}
+.preset.on{background:var(--mag-soft);border-color:var(--mag);color:var(--mag)}
+
+table.read{width:100%;border-collapse:collapse;font-size:.82rem}
+table.read th,table.read td{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line)}
+table.read th{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);font-weight:750}
+table.read td:first-child{font-family:var(--mono);color:var(--tx2);white-space:nowrap}
+table.read td:last-child{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--tx);font-weight:600}
+table.read tr.hi td{background:var(--mag-soft)}
+table.read tr.hi td:first-child{color:var(--mag)}
+.verdict{
+  margin-top:10px;padding:11px 13px;border-radius:11px;font-size:.84rem;
+  background:var(--panel3);border:1px solid var(--line);color:var(--tx2);min-height:44px;
+}
+.verdict b{color:var(--tx)}
+
+/* ---------------------------------------------------------------- code */
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tab{
+  font:inherit;font-size:.83rem;font-weight:650;padding:8px 14px;border-radius:9px;cursor:pointer;
+  background:transparent;border:1px solid var(--line);color:var(--tx2);
+}
+.tab:hover{color:var(--tx)}
+.tab.on{background:var(--panel2);border-color:var(--line2);color:var(--tx)}
+.codepane{display:none}
+.codepane.on{display:block}
+.codewrap{
+  background:var(--code); border:1px solid var(--line); border-radius:14px;
+  overflow:auto; max-height:520px; padding:10px 0;
+}
+.codewrap::-webkit-scrollbar{height:10px;width:10px}
+.codewrap::-webkit-scrollbar-thumb{background:#333a48;border-radius:8px}
+.cl{
+  display:flex; gap:10px; padding:2px 16px 2px 0; font-family:var(--mono);
+  font-size:.815rem; line-height:1.75; color:#c8d2e2; white-space:pre; cursor:default;
+  border-left:3px solid transparent;
+}
+.cl.has{cursor:pointer}
+.cl.has:hover{background:rgba(255,84,180,.08)}
+.cl.on{background:rgba(255,84,180,.14); border-left-color:var(--mag)}
+.cl .ln{flex:none;width:34px;text-align:right;color:#4c5566;user-select:none;font-size:.72rem;padding-top:2px}
+.cl .mk{
+  flex:none;width:17px;height:17px;border-radius:50%;background:var(--mag);color:#fff;
+  font-size:.62rem;font-weight:800;display:grid;place-items:center;margin-top:4px;
+  font-family:var(--sans); letter-spacing:0;
+}
+.cl .ct{flex:1; min-width:0}
+.cl .cm{color:#6f7a8c}
+.cl .kw{color:#ff7ac6}
+.cl .st{color:#8be9a8}
+.cl .fn{color:#7fb2ff}
+.cl .nu{color:#ffcc66}
+.notes{display:grid;gap:8px;margin-top:14px}
+.note{
+  display:flex;gap:11px;padding:11px 14px;border-radius:11px;background:var(--panel);
+  border:1px solid var(--line); font-size:.87rem; scroll-margin-top:96px;
+}
+.note.on{border-color:var(--mag); background:var(--mag-soft)}
+.note .mk{
+  flex:none;width:19px;height:19px;border-radius:50%;background:var(--panel3);color:var(--tx2);
+  font-size:.66rem;font-weight:800;display:grid;place-items:center;margin-top:2px;
+}
+.note.on .mk{background:var(--mag);color:#fff}
+.note > div > b{display:block;margin-bottom:1px;font-size:.88rem}
+.note p{margin:0;color:var(--tx2);font-size:.85rem}
+.note code{background:var(--panel3)}
+
+/* ---------------------------------------------------------------- distance */
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.calc{
+  font-family:var(--mono);font-size:.84rem;line-height:1.95;background:var(--code);color:#cfd8e8;
+  border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow-x:auto;white-space:pre;
+}
+.calc .v{color:#ffcc66}
+.calc .c{color:#6f7a8c}
+.bar2{height:26px;border-radius:7px;overflow:hidden;display:flex;border:1px solid var(--line);margin:8px 0 4px}
+.bar2 i{display:grid;place-items:center;font-size:.7rem;font-weight:750;font-style:normal;color:#08111c;white-space:nowrap;overflow:hidden}
+.bar2 i:first-child{background:var(--mag)}
+.bar2 i:last-child{background:var(--cy)}
+.legend2{display:flex;gap:16px;font-size:.75rem;color:var(--tx3);flex-wrap:wrap}
+.legend2 span{display:flex;align-items:center;gap:6px}
+.legend2 i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+/* ---------------------------------------------------------------- blocks */
+.blocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}
+.block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:17px;position:relative}
+.block h3{font-family:var(--mono);font-size:.92rem;color:var(--tx);margin-bottom:8px}
+.block h3 span{color:var(--mag)}
+.block p{font-size:.86rem;color:var(--tx2);margin:0 0 8px}
+.block .use{font-size:.72rem;color:var(--tx3);border-top:1px solid var(--line);padding-top:8px;margin-top:10px}
+.tag{display:inline-block;font-size:.63rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:4px;margin-bottom:7px}
+.tag.used{background:var(--gr-soft);color:var(--gr)}
+.tag.dead{background:var(--rd-soft);color:var(--rd)}
+
+/* ---------------------------------------------------------------- mission */
+.mflow{display:grid;gap:10px;margin:18px 0}
+.mstep{
+  --c:var(--mag);
+  display:flex;gap:14px;align-items:center;padding:13px 16px;border-radius:13px;
+  background:var(--panel);border:1px solid var(--line);position:relative;cursor:pointer;
+  text-align:left;font:inherit;color:inherit;width:100%;
+}
+.mstep:hover{border-color:var(--c)}
+.mstep.on{border-color:var(--c);background:var(--panel2)}
+.mstep .num{
+  flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  font-family:var(--mono);font-weight:800;font-size:.85rem;background:var(--panel3);color:var(--c);
+}
+.mstep.on .num{background:var(--c);color:#0b0d12}
+.mstep .t{flex:1;min-width:0}
+.mstep .t b{display:block;font-size:.93rem}
+.mstep .t small{color:var(--tx3);font-size:.76rem}
+.mstep .go{color:var(--tx3);flex:none}
+.gate{
+  margin-left:34px;padding-left:16px;border-left:2px dashed var(--line2);
+  font-size:.76rem;color:var(--tx3);padding-top:2px;padding-bottom:6px;
+}
+.msheet{display:none;margin-top:16px}
+.msheet.on{display:block}
+.msteps{display:flex;flex-direction:column;gap:5px;margin-top:12px}
+.mline{
+  display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:start;
+  padding:7px 10px;border-radius:9px;background:var(--panel2);border:1px solid transparent;
+  cursor:pointer;font-size:.82rem;text-align:left;font:inherit;color:inherit;
+}
+.mline:hover{border-color:var(--line2);background:var(--panel3)}
+.mline .i{font-family:var(--mono);font-size:.72rem;color:var(--tx3);padding-top:2px}
+.mline code{background:transparent;border:0;padding:0;font-size:.8rem;color:var(--cy)}
+.mline .say{display:block;color:var(--tx3);font-size:.78rem;margin-top:1px}
+.mline.sel{border-color:var(--mag);background:var(--mag-soft)}
+.mtot{margin-top:12px;font-size:.8rem;color:var(--tx3)}
+
+/* ---------------------------------------------------------------- checks */
+.checks{display:grid;gap:12px}
+.check{
+  display:grid;grid-template-columns:42px 1fr;gap:14px;padding:16px 18px;border-radius:14px;
+  background:var(--panel);border:1px solid var(--line);
+}
+.check .n{
+  width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-family:var(--mono);
+  font-weight:800;background:var(--am-soft);color:var(--am);border:1px solid color-mix(in srgb,var(--am) 35%,transparent);
+}
+.check h3{font-size:.98rem;margin-bottom:4px}
+.check p{font-size:.87rem;color:var(--tx2);margin:0 0 8px}
+.check .test{
+  font-size:.82rem;padding:9px 12px;border-radius:9px;background:var(--panel3);
+  border-left:3px solid var(--cy);color:var(--tx2);
+}
+.check .test b{color:var(--tx)}
+.check .meta{margin-top:9px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+
+/* ---------------------------------------------------------------- glossary */
+table.gl{width:100%;border-collapse:collapse;font-size:.87rem}
+table.gl th{text-align:left;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);padding:8px 10px;border-bottom:1px solid var(--line2)}
+table.gl td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.gl td:first-child{font-family:var(--mono);color:var(--cy);white-space:nowrap}
+table.gl tr:hover td{background:var(--panel2)}
+
+/* ---------------------------------------------------------------- misc */
+details.fold{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:0;overflow:hidden}
+details.fold summary{cursor:pointer;padding:13px 17px;font-weight:650;font-size:.92rem;list-style:none;display:flex;gap:9px;align-items:center}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold summary::before{content:"▸";color:var(--mag);transition:.2s;display:inline-block}
+details.fold[open] summary::before{transform:rotate(90deg)}
+details.fold .inner{padding:0 17px 16px;font-size:.88rem;color:var(--tx2)}
+details.fold .inner ul{margin:0;padding-left:20px}
+details.fold .inner li{margin-bottom:6px}
+footer{border-top:1px solid var(--line);padding:30px clamp(14px,3vw,28px) 50px;color:var(--tx3);font-size:.82rem}
+footer .in{max-width:1080px;margin:0 auto}
+footer a{color:var(--tx2)}
+.callout{
+  display:flex;gap:12px;padding:14px 16px;border-radius:12px;font-size:.88rem;
+  background:var(--am-soft);border:1px solid color-mix(in srgb, var(--am) 30%, transparent);
+  border-left:4px solid var(--am);
+}
+.callout .ico{color:var(--am);font-weight:900;flex:none}
+.callout p{margin:0}
+.callout.cy{background:var(--cy-soft);border-color:color-mix(in srgb,var(--cy) 30%,transparent);border-left-color:var(--cy)}
+.callout.cy .ico{color:var(--cy)}
+.callout.gr{background:var(--gr-soft);border-color:color-mix(in srgb,var(--gr) 30%,transparent);border-left-color:var(--gr)}
+.callout.gr .ico{color:var(--gr)}
+</style>
+</head>
+<body>
+<a class="skip" href="#start">Skip to content</a>
+
+<header class="topbar">
+  <div class="brand"><span class="dot" aria-hidden="true"></span>
+    <div>PID Explainer<small>SPIKE Prime · motors_pid()</small></div>
+  </div>
+  <nav class="nav" id="nav" aria-label="Sections">
+    <a href="#start">Start</a>
+    <a href="#idea">The idea</a>
+    <a href="#sim">Watch it move</a>
+    <a href="#code">The code</a>
+    <a href="#distance">Distance</a>
+    <a href="#blocks">Other blocks</a>
+    <a href="#program">Program flow</a>
+    <a href="#checks">Check these</a>
+    <a href="#glossary">German words</a>
+  </nav>
+  <button class="tbtn" id="themeBtn" type="button" aria-label="Switch light or dark theme" title="Light / dark">◐</button>
+</header>
+
+<main>
+
+<!-- ================================================================ START -->
+<section id="start" class="hero">
+  <div class="eyebrow">Read me first</div>
+  <h1>How your <span>PID</span> code works</h1>
+  <p class="lede">Your robot drives forward but wants to point at a certain angle. A gyro measures the
+  angle. A short piece of maths decides how hard to steer. That is the whole idea — and this page
+  lets you play with it until it stops being magic.</p>
+
+  <div class="chips">
+    <span class="chip"><b>No</b> coding needed</span>
+    <span class="chip"><b>Nothing</b> here touches your robot</span>
+    <span class="chip">Built from <b>your</b> motors_pid() code</span>
+  </div>
+
+  <div class="start">
+    <h2>Start here — 6 clicks</h2>
+    <p class="muted small" style="margin-bottom:0">If you have never done this before, do exactly these
+    six things in order. Each one takes a few seconds.</p>
+    <ol class="steps">
+      <li><div><b>Press the pink “Run” button</b> in the section called <a href="#sim">Watch it move</a>.
+        A little robot will drive across a grey field. It is a drawing, not your real robot.</div></li>
+      <li><div><b>Drag the slider called “Kp”</b> all the way to 12. Press Run again. Watch what the
+        robot does now. That is “too much P”.</div></li>
+      <li><div><b>Drag Kp back to 4</b> (the number from your code) and try Kp = 0.8. That is “too little P”.</div></li>
+      <li><div><b>Click any grey line of code</b> in <a href="#code">The code</a>. A plain-English note
+        appears underneath telling you what that line is for.</div></li>
+      <li><div><b>Look at <a href="#distance">Distance</a></b> if you ever wondered why
+        <code>motors_pid(0, 500, 21)</code> does not drive 21&nbsp;cm.</div></li>
+      <li><div><b>Stuck on a German word?</b> The last section translates all of them.</div></li>
+    </ol>
+    <div class="assure"><span class="ico">✓</span><div>This page is only a picture book. It contains
+      no upload button, no Bluetooth, and no way to change your program. You cannot break anything
+      by clicking around.</div></div>
+  </div>
+
+  <div class="choices">
+    <a class="choice" href="#idea">
+      <div class="k">I have 2 minutes</div>
+      <h3>Explain the idea</h3>
+      <p>One analogy, three letters, no code.</p>
+    </a>
+    <a class="choice" href="#sim">
+      <div class="k">I want to see it</div>
+      <h3>Watch it move</h3>
+      <p>A simulator with sliders. Break it on purpose.</p>
+    </a>
+    <a class="choice" href="#checks">
+      <div class="k">Something feels off</div>
+      <h3>Ten things to check</h3>
+      <p>Each with a 30-second test on the real robot.</p>
+    </a>
+  </div>
+</section>
+
+<!-- ================================================================ IDEA -->
+<section id="idea">
+  <div class="eyebrow">The one idea</div>
+  <h2>You already know how a PID works</h2>
+  <p class="lede">You have used one this morning. In the shower.</p>
+
+  <div class="grid g2" style="margin-top:22px">
+    <div class="card">
+      <h3>🥿 The shower</h3>
+      <p class="small muted">You want 38&nbsp;°C. You feel the water. It is 34&nbsp;°. You have an
+      <b>error</b> of 4&nbsp;°. So you turn the hot tap a little. You feel again. 36&nbsp;°. Smaller
+      error, smaller turn. 37.5&nbsp;°. Almost nothing.</p>
+      <p class="small muted" style="margin-bottom:0"><b>The bigger the error, the bigger the push.</b>
+      That single sentence is 80&nbsp;% of a PID.</p>
+    </div>
+    <div class="card">
+      <h3>🤖 The robot</h3>
+      <p class="small muted">You want heading 0&nbsp;°. The gyro says 12&nbsp;°. The <b>error</b> is
+      12&nbsp;°. So you steer a little. The gyro says 6&nbsp;°. Smaller error, smaller steer. 1&nbsp;°.
+      Almost nothing.</p>
+      <p class="small muted" style="margin-bottom:0">Same loop, different sensor. Your code does
+      exactly this, 20–50 times per second.</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:36px">The three letters</h3>
+  <p class="small muted" style="max-width:66ch">Each letter is a different way of reacting to the error.
+  Your code uses two of the three. The third is switched off.</p>
+
+  <div class="pidrow">
+    <div class="pcard p">
+      <div class="letter">P</div>
+      <h3>Proportional</h3>
+      <p><b>“How wrong am I right now?”</b> Push in proportion to the error. A big error gets a big
+      push. This alone gets you most of the way there.</p>
+      <div class="val">your code: kp = 4</div>
+    </div>
+    <div class="pcard i">
+      <div class="letter">I</div>
+      <h3>Integral</h3>
+      <p><b>“How long have I been wrong?”</b> Adds up the error over time. Fixes a stubborn offset
+      (a robot that always stops 3&nbsp;° short).</p>
+      <div class="val">your code: ki = 0 &nbsp;— off</div>
+    </div>
+    <div class="pcard d">
+      <div class="letter">D</div>
+      <h3>Derivative</h3>
+      <p><b>“How fast is the error shrinking?”</b> If you are closing in quickly, ease off early.
+      This is the brake that stops you overshooting.</p>
+      <div class="val">your code: kd = 1</div>
+    </div>
+  </div>
+
+  <div class="formula" aria-label="PID formula">
+    <b class="o">steering</b> = <b class="n">4</b> × error + <b class="n">0</b> × (sum of errors) + <b class="n">1</b> × (change in error)
+  </div>
+
+  <p class="small muted" style="margin-top:10px">Read that as: <b>steering = Kp × P + Ki × I + Kd × D</b>.
+  The three <code>K</code> numbers are the “gains”. Tuning a robot means choosing them.</p>
+
+  <h3 style="margin-top:36px">The loop, as a picture</h3>
+  <svg class="diagram" viewBox="0 0 780 250" role="img" aria-label="Control loop diagram: gyro measures heading, error is compared with target, PID computes steering, drive base moves robot, robot changes heading, back to gyro.">
+    <defs>
+      <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L9,4.5 L0,9 z" fill="currentColor"/>
+      </marker>
+    </defs>
+    <g fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#ah)" color="var(--tx3)">
+      <path d="M148,118 H190"/>
+      <path d="M330,118 H372"/>
+      <path d="M492,118 H534"/>
+      <path d="M650,118 H692"/>
+      <path d="M700,148 V214 H118 V158"/>
+    </g>
+    <g font-family="var(--sans)" font-size="12.5" fill="var(--tx)" text-anchor="middle">
+      <rect x="16" y="88" width="132" height="60" rx="12" fill="var(--panel2)" stroke="var(--line2)"/>
+      <text x="82" y="112" font-weight="700">Gyro</text>
+      <text x="82" y="130" font-size="11" fill="var(--tx3)">where am I?</text>
+
+      <circle cx="216" cy="118" r="16" fill="var(--panel2)" stroke="var(--line2)"/>
+      <text x="216" y="124" font-size="17" font-weight="700">−</text>
+
+      <rect x="244" y="88" width="120" height="60" rx="12" fill="var(--cy-soft)" stroke="var(--cy)"/>
+      <text x="304" y="112" font-weight="700" fill="var(--cy)">error</text>
+      <text x="304" y="130" font-size="11" fill="var(--tx3)">target − now</text>
+
+      <rect x="376" y="82" width="112" height="72" rx="12" fill="var(--mag-soft)" stroke="var(--mag)"/>
+      <text x="432" y="106" font-weight="700" fill="var(--mag)">P + I + D</text>
+      <text x="432" y="124" font-size="11" fill="var(--tx3)">the maths</text>
+      <text x="432" y="140" font-size="11" fill="var(--tx3)">kp, ki, kd</text>
+
+      <rect x="538" y="88" width="112" height="60" rx="12" fill="var(--panel2)" stroke="var(--line2)"/>
+      <text x="594" y="112" font-weight="700">steering</text>
+      <text x="594" y="130" font-size="11" fill="var(--tx3)">ric</text>
+
+      <rect x="696" y="88" width="70" height="60" rx="12" fill="var(--panel2)" stroke="var(--line2)"/>
+      <text x="731" y="114" font-weight="700" font-size="11.5">motors</text>
+      <text x="731" y="130" font-size="11" fill="var(--tx3)">drive</text>
+
+      <text x="405" y="234" font-size="11" fill="var(--tx3)">the robot turns → the gyro reading changes → the error changes → go round again</text>
+    </g>
+  </svg>
+
+  <div class="callout cy" style="margin-top:22px">
+    <span class="ico">i</span>
+    <p><b>One rule decides everything.</b> The loop is only stable if a positive steering value
+    pushes the robot in the direction that makes the error <em>smaller</em>. If it pushes the
+    <em>wrong</em> way, the error grows, so the push grows, and the robot spins away. That is called
+    positive feedback, and it is the failure you will see most often in this file.</p>
+  </div>
+</section>
+
+<!-- ================================================================ SIM -->
+<section id="sim">
+  <div class="eyebrow">Hands on</div>
+  <h2>Watch it move</h2>
+  <p class="lede">The robot below uses <em>your</em> control law: <code>err</code>, <code>derr</code>,
+  <code>errsum</code>, <code>ric</code>, the same three gains. Change a slider and press Run.</p>
+
+  <div class="simwrap" style="margin-top:22px">
+
+    <!-- LEFT: field -->
+    <div>
+      <div class="fieldbox">
+        <canvas id="simCanvas" aria-label="Simulated robot driving across a field, viewed from above"></canvas>
+      </div>
+      <div class="chartbox">
+        <canvas id="chartCanvas" aria-label="Chart of heading error over time"></canvas>
+        <div class="chartcap"><span>heading error (degrees) over time</span><span id="chartNow">—</span></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: controls -->
+    <div class="controls">
+
+      <div class="card" style="padding-bottom:14px">
+        <div class="ctlhead">
+          <strong style="font-size:.9rem">Gains</strong>
+          <div class="presets" id="presets">
+            <button class="preset on" data-p="code" type="button">Your code</button>
+            <button class="preset" data-p="p" type="button">P only</button>
+            <button class="preset" data-p="hard" type="button">Too much P</button>
+            <button class="preset" data-p="soft" type="button">Too little P</button>
+            <button class="preset" data-p="i" type="button">Add a little I</button>
+            <button class="preset" data-p="none" type="button">No PID</button>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+
+        <div class="row">
+          <label for="sKp">Kp — proportional</label>
+          <output id="vKp" for="sKp">4</output>
+          <input type="range" id="sKp" min="0" max="12" step="0.5" value="4">
+          <span class="hint">Reacts to the error right now. Higher = more nervous.</span>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <label for="sKd">Kd — derivative</label>
+          <output id="vKd" for="sKd">1</output>
+          <input type="range" id="sKd" min="0" max="6" step="0.25" value="1">
+          <span class="hint">The brake. Higher = smoother but slower.</span>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <label for="sKi">Ki — integral</label>
+          <output id="vKi" for="sKi">0</output>
+          <input type="range" id="sKi" min="0" max="1" step="0.05" value="0">
+          <span class="hint">In your code this is 0 — it is switched off.</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding-bottom:14px">
+        <strong style="font-size:.9rem">The move</strong>
+        <div class="row" style="margin-top:10px">
+          <label for="sSpeed">speed — as you type it</label>
+          <output id="vSpeed" for="sSpeed">400</output>
+          <input type="range" id="sSpeed" min="100" max="900" step="50" value="400">
+          <span class="hint">The 2nd number in <code>motors_pid(stp, speed, amount)</code>.</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label for="sAmount">amount — distance units</label>
+          <output id="vAmount" for="sAmount">45</output>
+          <input type="range" id="sAmount" min="5" max="70" step="1" value="45">
+          <span class="hint">The 3rd number. Not centimetres — see <a href="#distance">Distance</a>.</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label for="sErr">start pointing off by</label>
+          <output id="vErr" for="sErr">15°</output>
+          <input type="range" id="sErr" min="-40" max="40" step="1" value="15">
+          <span class="hint">Like a robot that starts a bit crooked.</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label for="sHz">loop rate</label>
+          <output id="vHz" for="sHz">30 /s</output>
+          <input type="range" id="sHz" min="10" max="80" step="5" value="30">
+          <span class="hint">Your real loop has no <code>wait()</code>, so this is whatever Python manages.</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding-bottom:14px">
+        <div class="btns">
+          <button class="btn primary" id="btnRun" type="button">▶ Run</button>
+          <button class="btn" id="btnStep" type="button">Step once</button>
+          <button class="btn" id="btnKick" type="button">Kick it</button>
+          <button class="btn" id="btnReset" type="button">Reset</button>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-start">
+          <input type="checkbox" id="ghostChk" style="margin-top:4px;accent-color:var(--cy)">
+          <label for="ghostChk" class="small" style="color:var(--tx2)">Also show a ghost robot
+            <b>without</b> PID — the same crooked start, no correction.</label>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-start">
+          <input type="checkbox" id="signChk" style="margin-top:4px;accent-color:var(--am)">
+          <label for="signChk" class="small" style="color:var(--tx2)">Flip the steering sign
+            (<b>the “why does it spin away” demo</b>)</label>
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 16px">
+        <strong style="font-size:.82rem;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3)">The code's own variables, live</strong>
+        <table class="read" style="margin-top:8px">
+          <tbody>
+            <tr><td>g</td><td id="oG">0.0</td></tr>
+            <tr><td>stp</td><td id="oStp">0</td></tr>
+            <tr class="hi"><td>err</td><td id="oErr">0.0</td></tr>
+            <tr><td>derr</td><td id="oDerr">0.0</td></tr>
+            <tr><td>errsum</td><td id="oSum">0.0</td></tr>
+            <tr><td>ric</td><td id="oRic">0</td></tr>
+            <tr><td>strecke</td><td id="oDist">0.0</td></tr>
+            <tr><td>reststrecke</td><td id="oRest">45.0</td></tr>
+          </tbody>
+        </table>
+        <div class="verdict" id="verdict">Press <b>Run</b> to start.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="grid g3" style="margin-top:20px">
+    <div class="card">
+      <h3>What you should see</h3>
+      <p class="small muted" style="margin-bottom:0">With <b>Kp 4, Kd 1</b> the robot bends back to the
+      dotted line within about a second and then holds it. Smooth, slightly lazy.</p>
+    </div>
+    <div class="card">
+      <h3>Kp too big</h3>
+      <p class="small muted" style="margin-bottom:0">The robot zig-zags: it corrects, over-corrects,
+      corrects again. In the chart the error line swings above and below zero.</p>
+    </div>
+    <div class="card">
+      <h3>Kp too small</h3>
+      <p class="small muted" style="margin-bottom:0">It drifts back very slowly, or not at all, and
+      arrives still crooked. The error line sinks towards zero but never gets there.</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:18px">
+    <span class="ico">!</span>
+    <p><b>This drawing is a simplification.</b> Your robot weighs a kilo and has four wheels
+    scrubbing on a mat; the drawing is a dot on a flat field. The <em>shape</em> of the reaction is
+    real — the exact numbers are not. Only the robot can tell you if Kp = 4 is right.</p>
+  </div>
+
+  <p class="tiny" style="margin-top:14px">The steering scale (how many degrees per second one unit of
+  <code>ric</code> produces) is an assumption chosen to make the animation readable, not a measured
+  property of your robot. <span class="b b-inf">inference</span></p>
+</section>
+
+<!-- ================================================================ CODE -->
+<section id="code">
+  <div class="eyebrow">Line by line</div>
+  <h2>The code, with sticky notes</h2>
+  <p class="lede">Pick a part, then click any line that has a pink number. The explanation appears
+  under the grey box.</p>
+
+  <div class="tabs" role="tablist" aria-label="Code sections">
+    <button class="tab on" data-tab="pid" type="button" role="tab">motors_pid() — the PID</button>
+    <button class="tab" data-tab="turn" type="button" role="tab">ausrichten2() — turn in place</button>
+    <button class="tab" data-tab="curve" type="button" role="tab">motors_kurve1() — curve</button>
+    <button class="tab" data-tab="setup" type="button" role="tab">Setup — before anything moves</button>
+  </div>
+
+  <!-- ---------------- PID pane -->
+  <div class="codepane on" data-pane="pid">
+<pre class="codewrap" style="margin:0"><span class="cl"><span class="ln"> 1</span><span class="mk" style="visibility:hidden"></span><span class="ct"><span class="kw">def</span> <span class="fn">motors_pid</span>(stp, speed, amount):</span></span><span class="cl has" data-n="1"><span class="ln"> 2</span><span class="mk">1</span><span class="ct">    <span class="kw">global</span> kurvejanein</span></span><span class="cl"><span class="ln"> 3</span><span class="mk" style="visibility:hidden"></span><span class="ct">    ric = <span class="nu">0</span></span></span><span class="cl has" data-n="2"><span class="ln"> 4</span><span class="mk">2</span><span class="ct">    speed = speed*<span class="nu">-1</span></span></span><span class="cl has" data-n="3"><span class="ln"> 5</span><span class="mk">3</span><span class="ct">    kp = <span class="nu">4</span></span></span><span class="cl"><span class="ln"> 6</span><span class="mk" style="visibility:hidden"></span><span class="ct">    ki = <span class="nu">0</span></span></span><span class="cl"><span class="ln"> 7</span><span class="mk" style="visibility:hidden"></span><span class="ct">    kd = <span class="nu">1</span></span></span><span class="cl"><span class="ln"> 8</span><span class="mk" style="visibility:hidden"></span><span class="ct">    err = <span class="nu">0</span>          <span class="cm"># Fehler</span></span></span><span class="cl"><span class="ln"> 9</span><span class="mk" style="visibility:hidden"></span><span class="ct">    errsum = <span class="nu">0</span>       <span class="cm"># Fehlersumme</span></span></span><span class="cl"><span class="ln">10</span><span class="mk" style="visibility:hidden"></span><span class="ct">    erro = <span class="nu">0</span>         <span class="cm"># alter Fehler</span></span></span><span class="cl"><span class="ln">11</span><span class="mk" style="visibility:hidden"></span><span class="ct">    derr = <span class="nu">0</span>         <span class="cm"># Fehlerdifferenz</span></span></span><span class="cl"><span class="ln">12</span><span class="mk" style="visibility:hidden"></span><span class="ct">    strecke = <span class="nu">0</span>      <span class="cm"># zurückgelegte Strecke</span></span></span><span class="cl"><span class="ln">13</span><span class="mk" style="visibility:hidden"></span><span class="ct">    speed_local = speed</span></span><span class="cl"><span class="ln">14</span><span class="mk" style="visibility:hidden"></span><span class="ct">    anfahren = <span class="nu">0</span></span></span><span class="cl has" data-n="4"><span class="ln">15</span><span class="mk">4</span><span class="ct">    links.reset_angle(<span class="nu">0</span>)</span></span><span class="cl"><span class="ln">16</span><span class="mk" style="visibility:hidden"></span><span class="ct">    rechts.reset_angle(<span class="nu">0</span>)</span></span><span class="cl has" data-n="5"><span class="ln">17</span><span class="mk">5</span><span class="ct">    <span class="kw">while</span> strecke <span class="nu">&lt;</span> amount <span class="kw">or</span> kurvejanein == <span class="nu">2</span>:</span></span><span class="cl"><span class="ln">18</span><span class="mk" style="visibility:hidden"></span><span class="ct">        reststrecke = amount - strecke</span></span><span class="cl has" data-n="6"><span class="ln">19</span><span class="mk">6</span><span class="ct">        print(hub.imu.heading())</span></span><span class="cl"><span class="ln">20</span><span class="mk" style="visibility:hidden"></span><span class="ct"></span></span><span class="cl has" data-n="7"><span class="ln">21</span><span class="mk">7</span><span class="ct">        <span class="kw">if</span> kurvejanein == <span class="nu">0</span>:</span></span><span class="cl"><span class="ln">22</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="cm"># Geschwindigkeit anpassen (abbremsen / anfahren)</span></span></span><span class="cl"><span class="ln">23</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">if</span> reststrecke <span class="nu">&lt;</span> <span class="nu">1</span>:</span></span><span class="cl"><span class="ln">24</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed_local = speed_local</span></span><span class="cl"><span class="ln">25</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">elif</span> reststrecke <span class="nu">&lt;</span> abs(speed / <span class="nu">10</span>):</span></span><span class="cl"><span class="ln">26</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed_local = <span class="fn">int</span>((abs(speed) - (abs(speed) / ((reststrecke + <span class="nu">10</span>) / <span class="nu">5</span>))) * (speed / abs(speed)))</span></span><span class="cl has" data-n="8"><span class="ln">27</span><span class="mk">8</span><span class="ct">            <span class="kw">elif</span> anfahren <span class="nu">&lt;</span> <span class="fn">int</span>(abs(speed / <span class="nu">15</span>)):</span></span><span class="cl"><span class="ln">28</span><span class="mk" style="visibility:hidden"></span><span class="ct">                anfahren += <span class="nu">1</span></span></span><span class="cl"><span class="ln">29</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed_local = <span class="fn">int</span>((<span class="nu">5</span> * anfahren) * (speed / abs(speed)))</span></span><span class="cl"><span class="ln">30</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">else</span>:</span></span><span class="cl"><span class="ln">31</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed_local = speed</span></span><span class="cl has" data-n="9"><span class="ln">32</span><span class="mk">9</span><span class="ct">        g = hub.imu.heading()</span></span><span class="cl has" data-n="10"><span class="ln">33</span><span class="mk">10</span><span class="ct">        <span class="kw">if</span> speed <span class="nu">&gt;</span> <span class="nu">0</span>:</span></span><span class="cl"><span class="ln">34</span><span class="mk" style="visibility:hidden"></span><span class="ct">            err = g-stp</span></span><span class="cl"><span class="ln">35</span><span class="mk" style="visibility:hidden"></span><span class="ct">        <span class="kw">else</span>:</span></span><span class="cl"><span class="ln">36</span><span class="mk" style="visibility:hidden"></span><span class="ct">            err = stp-g</span></span><span class="cl has" data-n="11"><span class="ln">37</span><span class="mk">11</span><span class="ct">        derr = err - erro</span></span><span class="cl"><span class="ln">38</span><span class="mk" style="visibility:hidden"></span><span class="ct">        erro = err</span></span><span class="cl has" data-n="12"><span class="ln">39</span><span class="mk">12</span><span class="ct">        errsum += err</span></span><span class="cl has" data-n="13"><span class="ln">40</span><span class="mk">13</span><span class="ct">        ric = <span class="fn">int</span>(kp * err + ki * errsum + kd * derr)</span></span><span class="cl has" data-n="14"><span class="ln">41</span><span class="mk">14</span><span class="ct">        ric = <span class="fn">int</span>(ric * (speed / abs(speed)))</span></span><span class="cl has" data-n="15"><span class="ln">42</span><span class="mk">15</span><span class="ct">        motors.<span class="fn">drive</span>(ric, speed_local)</span></span><span class="cl"><span class="ln">43</span><span class="mk" style="visibility:hidden"></span><span class="ct"></span></span><span class="cl has" data-n="16"><span class="ln">44</span><span class="mk">16</span><span class="ct">        <span class="kw">if</span> kurvejanein == <span class="nu">0</span>:</span></span><span class="cl"><span class="ln">45</span><span class="mk" style="visibility:hidden"></span><span class="ct">            degLinks = links.<span class="fn">angle</span>()</span></span><span class="cl"><span class="ln">46</span><span class="mk" style="visibility:hidden"></span><span class="ct">            degRechts = rechts.<span class="fn">angle</span>()</span></span><span class="cl"><span class="ln">47</span><span class="mk" style="visibility:hidden"></span><span class="ct">            degMittel = (degLinks - degRechts) / <span class="nu">2</span></span></span><span class="cl"><span class="ln">48</span><span class="mk" style="visibility:hidden"></span><span class="ct">            strecke = (abs(degMittel) / <span class="nu">360</span>) * <span class="nu">5.56</span> * pi</span></span></pre>
+
+    <div class="notes">
+      <div class="note" data-n="1"><span class="mk">1</span><div><b>Three inputs, one output-free function</b>
+        <p><code>stp</code> = <em>setpoint</em>, the heading to hold. <code>speed</code> = how fast to drive.
+        <code>amount</code> = how far, in the code's own distance units. It drives, then returns.</p></div></div>
+
+      <div class="note" data-n="2"><span class="mk">2</span><div><b>Sign flip #1</b>
+        <p>Whatever speed you passed in, the function works with the opposite sign from here on. Every
+        later <code>speed</code> in this function is the flipped one. This is one of three sign
+        operations that must agree; see <a href="#checks">Check these</a>.</p></div></div>
+
+      <div class="note" data-n="3"><span class="mk">3</span><div><b>The whole tuning, in three lines</b>
+        <p><b>Kp 4</b> — four units of steering for every degree of error. <b>Ki 0</b> — integral off.
+        <b>Kd 1</b> — a small brake. Changing robot behaviour means changing these three numbers, and
+        nothing else in the function.</p></div></div>
+
+      <div class="note" data-n="4"><span class="mk">4</span><div><b>Zero the odometer</b>
+        <p>The wheel counters start at 0, so <code>strecke</code> measures <em>this move only</em>.
+        Note it is <code>links.angle()</code> — <b>motor</b> degrees. If there were a gear between
+        motor and wheel, this number would be wrong.</p></div></div>
+
+      <div class="note" data-n="5"><span class="mk">5</span><div><b>The stop condition</b>
+        <p>Keep looping until the counted distance reaches <code>amount</code>. The
+        <code>or kurvejanein == 2</code> part is a leftover switch that is never turned on anywhere
+        in the file, so ignore it — it is dead code.</p></div></div>
+
+      <div class="note" data-n="6"><span class="mk">6</span><div><b>A print in every single pass</b>
+        <p>Printing is slow, and it makes each pass take a different amount of time. Slow, uneven
+        passes are exactly what makes the <code>Kd</code> term unpredictable, because <code>Kd</code>
+        reacts to “change since last pass”, not “change per second”.</p></div></div>
+
+      <div class="note" data-n="7"><span class="mk">7</span><div><b>The speed ramp</b>
+        <p>Three cases: <b>arriving</b> (slow down proportionally to what is left), <b>setting off</b>
+        (add 5 per pass through <code>anfahren</code> instead of jumping straight to full speed), and
+        <b>cruising</b> (just use <code>speed</code>). This is a simple, hand-made acceleration curve —
+        not part of the PID.</p></div></div>
+
+      <div class="note" data-n="8"><span class="mk">8</span><div><b>Why the robot still rolls at the end</b>
+        <p>The braking formula bottoms out at roughly half of <code>speed</code>, never at zero. So when
+        the loop exits, the robot is still moving — which is why nearly every call in the program is
+        followed by <code>motors.stop()</code>.</p></div></div>
+
+      <div class="note" data-n="9"><span class="mk">9</span><div><b>The measurement</b>
+        <p><code>g</code> = <em>Gierwinkel</em> = the gyro's heading in degrees. This is the “where am
+        I?” half of the loop. It is read fresh on every pass, which is good.</p></div></div>
+
+      <div class="note" data-n="10"><span class="mk">10</span><div><b>The error, and its sign</b>
+        <p>Forward motion uses <code>g − stp</code>; reverse uses <code>≤stp − g</code>. The two branches
+        exist so that driving backwards still corrects in the right direction. If one branch is
+        written the other way round, the robot steers <em>away</em> from the target and the error grows
+        without limit.</p></div></div>
+
+      <div class="note" data-n="11"><span class="mk">11</span><div><b>The derivative — no time in it</b>
+        <p><code>derr</code> is “error now minus error last pass”. There is no division by elapsed
+        time, so at a 30&nbsp;Hz loop the same <code>Kd</code> is three times stronger than at
+        10&nbsp;Hz. Change the loop rate and your tuning changes too.</p></div></div>
+
+      <div class="note" data-n="12"><span class="mk">12</span><div><b>The integral — accumulating forever</b>
+        <p>Every pass adds the error to a running total. It is never limited and never reset. Harmless
+        today because <code>Ki = 0</code> multiplies it by zero — but the day someone sets
+        <code>Ki</code> to 0.1, this number will have been growing for the whole move, and the robot
+        will lurch when it is finally used.</p></div></div>
+
+      <div class="note" data-n="13"><span class="mk">13</span><div><b>The one line that matters</b>
+        <p><code>ric = Kp·err + Ki·errsum + Kd·derr</code>. Everything else in this function is either
+        measuring, smoothing the start, or counting distance. <code>int()</code> throws away the
+        fraction — Python's <code>int()</code> truncates towards zero, it does not round.</p></div></div>
+
+      <div class="note" data-n="14"><span class="mk">14</span><div><b>Sign flip #2</b>
+        <p>Multiply the steering by the direction of travel again. Combined with flip&nbsp;#1 this is
+        what makes the same code work forwards and backwards. It also means two flips cancel — so it
+        is worth testing on the floor which way the robot actually goes.</p></div></div>
+
+      <div class="note" data-n="15"><span class="mk">15</span><div><b>The push</b>
+        <p><code>motors.drive(ric, speed_local)</code> — the PID result first, the speed second.
+        <b>Check this one against your PyBricks version</b>: the published signature is
+        <code>drive(speed, turn_rate)</code>, speed first. See <a href="#checks">Check #1</a> for a
+        30-second test you can do with the robot on blocks.</p></div></div>
+
+      <div class="note" data-n="16"><span class="mk">16</span><div><b>Counting the distance</b>
+        <p>The two wheels turn in opposite directions as numbers (because the motors are mounted
+        mirror-image), so <b>subtracting</b> them adds up instead of cancelling. Divide by two, convert
+        degrees to turns, multiply by the wheel circumference. Full explanation in
+        <a href="#distance">Distance</a>.</p></div></div>
+    </div>
+  </div>
+
+  <!-- ---------------- TURN pane -->
+  <div class="codepane" data-pane="turn">
+<pre class="codewrap" style="margin:0"><span class="cl"><span class="ln"> 1</span><span class="mk" style="visibility:hidden"></span><span class="ct"><span class="kw">def</span> <span class="fn">ausrichten2</span>(stp):</span></span><span class="cl has" data-n="21"><span class="ln"> 2</span><span class="mk">1</span><span class="ct">    g = <span class="fn">int</span>(hub.imu.<span class="fn">heading</span>())</span></span><span class="cl has" data-n="22"><span class="ln"> 3</span><span class="mk">2</span><span class="ct">    <span class="kw">while</span> (g != stp):</span></span><span class="cl"><span class="ln"> 4</span><span class="mk" style="visibility:hidden"></span><span class="ct">        print(hub.imu.heading())</span></span><span class="cl has" data-n="23"><span class="ln"> 5</span><span class="mk">3</span><span class="ct">        <span class="kw">if</span> (abs(g-stp) <span class="nu">&gt;</span> <span class="nu">1800</span>):</span></span><span class="cl"><span class="ln"> 6</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="cm"># Drehrichtung umkehren für Winkel über 180°</span></span></span><span class="cl"><span class="ln"> 7</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">if</span> (g <span class="nu">&lt;</span> stp):</span></span><span class="cl"><span class="ln"> 8</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed = <span class="fn">int</span>((stp-g-<span class="nu">360</span>)*(-<span class="nu">5</span>))+<span class="nu">30</span></span></span><span class="cl"><span class="ln"> 9</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">elif</span> (g <span class="nu">&gt;</span> stp):</span></span><span class="cl"><span class="ln">10</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed = <span class="fn">int</span>((stp-g+<span class="nu">360</span>)*(-<span class="nu">5</span>))-<span class="nu">30</span></span></span><span class="cl"><span class="ln">11</span><span class="mk" style="visibility:hidden"></span><span class="ct">        <span class="kw">else</span>:</span></span><span class="cl has" data-n="24"><span class="ln">12</span><span class="mk">4</span><span class="ct">            <span class="kw">if</span> (g <span class="nu">&lt;</span> stp):</span></span><span class="cl"><span class="ln">13</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed = <span class="fn">int</span>((stp-g)*(-<span class="nu">5</span>))-<span class="nu">30</span></span></span><span class="cl"><span class="ln">14</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">elif</span> (g <span class="nu">&gt;</span> stp):</span></span><span class="cl"><span class="ln">15</span><span class="mk" style="visibility:hidden"></span><span class="ct">                speed = <span class="fn">int</span>((stp-g)*(-<span class="nu">5</span>))+<span class="nu">30</span></span></span><span class="cl has" data-n="25"><span class="ln">16</span><span class="mk">5</span><span class="ct">        links.<span class="fn">run</span>(speed)</span></span><span class="cl"><span class="ln">17</span><span class="mk" style="visibility:hidden"></span><span class="ct">        rechts.<span class="fn">run</span>(speed)</span></span><span class="cl"><span class="ln">18</span><span class="mk" style="visibility:hidden"></span><span class="ct">        g = <span class="fn">int</span>(hub.imu.heading())</span></span><span class="cl"><span class="ln">19</span><span class="mk" style="visibility:hidden"></span><span class="ct">    motors.<span class="fn">stop</span>()</span></span></pre>
+
+    <div class="notes">
+      <div class="note" data-n="21"><span class="mk">1</span><div><b>Same idea, much simpler</b>
+        <p><code>ausrichten</code> means “to align”. This one turns the robot <em>in place</em> until it
+        points at <code>stp</code>. It uses only P — no I, no D — plus a constant <code>30</code>.</p></div></div>
+
+      <div class="note" data-n="22"><span class="mk">2</span><div><b>The risky stop condition</b>
+        <p><code>while g != stp</code> means “until exactly equal”. If the heading lands on 34 when you
+        asked for 35, and the push is not enough to move it, this loop can spin forever. A tolerance
+        (<code>abs(g-stp) &lt; 2</code>) would be safer. In practice the constant 30 usually
+        rescues it.</p></div></div>
+
+      <div class="note" data-n="23"><span class="mk">3</span><div><b>1800, not 180</b>
+        <p>This branch is supposed to handle the “go the short way round” case for angles over
+        180&nbsp;°, but it checks 180<em>0</em>&nbsp;°. The gyro would need to be five full turns away
+        before it triggers, so in practice this branch never runs. Almost certainly a typo.</p></div></div>
+
+      <div class="note" data-n="24"><span class="mk">4</span><div><b>P, with a kick</b>
+        <p><code>(stp − g) × (−5)</code> is proportional control with gain 5. The <code>±30</code> is a
+        constant nudge added in the same direction — the minimum effort that actually makes the
+        motors move against friction. Without it the robot would creep to a stop a few degrees
+        short.</p></div></div>
+
+      <div class="note" data-n="25"><span class="mk">5</span><div><b>Both wheels, same speed</b>
+        <p>Running both drive motors at the same speed makes the robot pivot on the spot. Note it uses
+        the raw motors, not <code>motors.drive()</code> — you can do that because
+        <code>motors.stop()</code> was called and the drive base is not driving.</p></div></div>
+    </div>
+  </div>
+
+  <!-- ---------------- CURVE pane -->
+  <div class="codepane" data-pane="curve">
+<pre class="codewrap" style="margin:0"><span class="cl"><span class="ln"> 1</span><span class="mk" style="visibility:hidden"></span><span class="ct"><span class="kw">def</span> <span class="fn">motors_kurve1</span>(target_angle, speed, steering):</span></span><span class="cl has" data-n="31"><span class="ln"> 2</span><span class="mk">1</span><span class="ct">    MIN_SPEED = <span class="nu">50</span></span></span><span class="cl"><span class="ln"> 3</span><span class="mk" style="visibility:hidden"></span><span class="ct"></span></span><span class="cl"><span class="ln"> 4</span><span class="mk" style="visibility:hidden"></span><span class="ct">    <span class="kw">while</span> <span class="nu">True</span>:</span></span><span class="cl"><span class="ln"> 5</span><span class="mk" style="visibility:hidden"></span><span class="ct">        current_angle = hub.imu.<span class="fn">heading</span>()</span></span><span class="cl"><span class="ln"> 6</span><span class="mk" style="visibility:hidden"></span><span class="ct">        remaining = target_angle - current_angle</span></span><span class="cl has" data-n="32"><span class="ln"> 7</span><span class="mk">2</span><span class="ct">        <span class="kw">if</span> abs(remaining) <span class="nu">&lt;=</span> <span class="nu">3</span>:</span></span><span class="cl"><span class="ln"> 8</span><span class="mk" style="visibility:hidden"></span><span class="ct">            <span class="kw">break</span></span></span><span class="cl has" data-n="33"><span class="ln"> 9</span><span class="mk">3</span><span class="ct">        <span class="kw">if</span> abs(remaining) <span class="nu">&lt;</span> <span class="nu">10</span>:</span></span><span class="cl"><span class="ln">10</span><span class="mk" style="visibility:hidden"></span><span class="ct">            drive_speed = <span class="fn">max</span>(MIN_SPEED, abs(remaining) / <span class="nu">10</span> * abs(speed))</span></span><span class="cl"><span class="ln">11</span><span class="mk" style="visibility:hidden"></span><span class="ct">        <span class="kw">else</span>:</span></span><span class="cl"><span class="ln">12</span><span class="mk" style="visibility:hidden"></span><span class="ct">            drive_speed = abs(speed)</span></span><span class="cl"><span class="ln">13</span><span class="mk" style="visibility:hidden"></span><span class="ct">        drive_speed *= <span class="nu">1</span> <span class="kw">if</span> speed <span class="nu">&gt;</span> <span class="nu">0</span> <span class="kw">else</span> <span class="nu">-1</span></span></span><span class="cl has" data-n="34"><span class="ln">14</span><span class="mk">4</span><span class="ct">        motors.<span class="fn">drive</span>(-steering, -drive_speed)</span></span><span class="cl"><span class="ln">15</span><span class="mk" style="visibility:hidden"></span><span class="ct">        <span class="fn">wait</span>(<span class="nu">20</span>)</span></span><span class="cl has" data-n="35"><span class="ln">16</span><span class="mk">5</span><span class="ct">    motors.<span class="fn">stop</span>()</span></span></pre>
+
+    <div class="notes">
+      <div class="note" data-n="31"><span class="mk">1</span><div><b>Never stop before arriving</b>
+        <p><code>MIN_SPEED = 50</code> is a floor: even at the very end the robot keeps creeping. That
+        avoids the “stuck two degrees short forever” problem at the cost of a little overshoot.</p></div></div>
+
+      <div class="note" data-n="32"><span class="mk">2</span><div><b>A proper tolerance</b>
+        <p><code>abs(remaining) &lt;= 3</code> — this is the safe way to stop. Compare with
+        <code>ausrichten</code>, which waits for exact equality. This function is the better pattern.</p></div></div>
+
+      <div class="note" data-n="33"><span class="mk">3</span><div><b>Gentle finish</b>
+        <p>In the last 10&nbsp;° the drive speed is scaled by how much is left, so the robot eases in
+        instead of slamming to a stop. Note this only slows the <em>forward</em> speed, not the
+        steering.</p></div></div>
+
+      <div class="note" data-n="34"><span class="mk">4</span><div><b>Two minus signs</b>
+        <p><code>drive(-steering, -drive_speed)</code>. Whether these two minus signs are needed depends
+        on the same sign convention as <a href="#checks">Check #2</a>. With an odd number of sign
+        errors the robot turns the opposite way to what you asked.</p></div></div>
+
+      <div class="note" data-n="35"><span class="mk">5</span><div><b>This loop does wait</b>
+        <p><code>wait(20)</code> gives a steady 50 loops per second — better than
+        <code>motors_pid</code>, which has no wait at all. A steady loop is what makes a PID
+        repeatable.</p></div></div>
+    </div>
+  </div>
+
+  <!-- ---------------- SETUP pane -->
+  <div class="codepane" data-pane="setup">
+<pre class="codewrap" style="margin:0"><span class="cl has" data-n="41"><span class="ln"> 1</span><span class="mk">1</span><span class="ct">hub = <span class="fn">PrimeHub</span>(top_side=Axis.Z, front_side=Axis.Y)</span></span><span class="cl"><span class="ln"> 2</span><span class="mk" style="visibility:hidden"></span><span class="ct">hub.light.<span class="fn">on</span>(Color.MAGENTA)</span></span><span class="cl has" data-n="42"><span class="ln"> 3</span><span class="mk">2</span><span class="ct">hub.system.<span class="fn">set_stop_button</span>(Button.BLUETOOTH)</span></span><span class="cl"><span class="ln"> 4</span><span class="mk" style="visibility:hidden"></span><span class="ct"></span></span><span class="cl has" data-n="43"><span class="ln"> 5</span><span class="mk">3</span><span class="ct">rechts = <span class="fn">Motor</span>(Port.A)</span></span><span class="cl"><span class="ln"> 6</span><span class="mk" style="visibility:hidden"></span><span class="ct">links  = <span class="fn">Motor</span>(Port.E)</span></span><span class="cl has" data-n="44"><span class="ln"> 7</span><span class="mk">4</span><span class="ct">modull = <span class="fn">Motor</span>(Port.F, Direction.CLOCKWISE, reset_angle=<span class="kw">True</span>, profile=<span class="kw">None</span>)</span></span><span class="cl"><span class="ln"> 8</span><span class="mk" style="visibility:hidden"></span><span class="ct">modulr = <span class="fn">Motor</span>(Port.B, Direction.CLOCKWISE, reset_angle=<span class="kw">True</span>, profile=<span class="kw">None</span>)</span></span><span class="cl"><span class="ln"> 9</span><span class="mk" style="visibility:hidden"></span><span class="ct">modull.control.<span class="fn">stall_tolerances</span>(<span class="nu">300</span>, <span class="nu">50</span>)</span></span><span class="cl has" data-n="45"><span class="ln">10</span><span class="mk">5</span><span class="ct">motors = <span class="fn">DriveBase</span>(links, rechts, wheel_diameter=<span class="nu">62.4</span>, axle_track=<span class="nu">106</span>)</span></span><span class="cl"><span class="ln">11</span><span class="mk" style="visibility:hidden"></span><span class="ct">hub.imu.<span class="fn">reset_heading</span>(<span class="nu">0</span>)</span></span></pre>
+
+    <div class="notes">
+      <div class="note" data-n="41"><span class="mk">1</span><div><b>Telling the hub which way is up</b>
+        <p><code>top_side</code> and <code>front_side</code> describe how the hub is mounted. They
+        decide what “heading 0” means. Get them wrong and every angle in the program is shifted.</p></div></div>
+
+      <div class="note" data-n="42"><span class="mk">2</span><div><b>Emergency stop</b>
+        <p>The Bluetooth button becomes <b>stop</b>. Good habit at a competition — you do not want to
+        chase a robot across the table to switch it off.</p></div></div>
+
+      <div class="note" data-n="43"><span class="mk">3</span><div><b>Drive motors</b>
+        <p><code>rechts</code> = right on port A, <code>links</code> = left on port E. No direction
+        override is given, so both count clockwise as positive — that is why the two
+        <code>angle()</code> readings have opposite signs when driving straight.</p></div></div>
+
+      <div class="note" data-n="44"><span class="mk">4</span><div><b>The attachment motors</b>
+        <p><code>modull</code>/<code>modulr</code> are the left and right arms. <code>profile=None</code>
+        turns off the smooth acceleration ramp, so <code>run_angle</code> jumps to speed immediately.
+        For competition arms that is usually what you want: fast and predictable.</p></div></div>
+
+      <div class="note" data-n="45"><span class="mk">5</span><div><b>The two numbers that scale everything</b>
+        <p>Wheel diameter 62.4&nbsp;mm and axle track 106&nbsp;mm are what PyBricks uses to turn “mm”
+        into wheel rotation. They are also what makes the distance mismatch in
+        <a href="#distance">Distance</a> visible. <span class="b b-inf">source not recorded</span></p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ DISTANCE -->
+<section id="distance">
+  <div class="eyebrow">The confusing bit</div>
+  <h2>Why 21 does not mean 21 cm</h2>
+  <p class="lede">The third number of <code>motors_pid(stp, speed, amount)</code> is in the function's
+  own private unit. It counts wheel turns, and then multiplies by the circumference of a
+  <b>55.6&nbsp;mm</b> wheel — while the drive base above says the wheel is <b>62.4&nbsp;mm</b>.</p>
+
+  <div class="dgrid" style="margin-top:20px">
+    <div class="card">
+      <h3>Move the wheel by hand</h3>
+      <div class="row" style="margin-top:10px">
+        <label for="dTurns">one wheel turns…</label>
+        <output id="vTurns" for="dTurns">1.00</output>
+        <input type="range" id="dTurns" min="0.25" max="5" step="0.05" value="1">
+        <span class="hint">Drag it and watch the arithmetic below change.</span>
+      </div>
+      <div class="calc" style="margin-top:12px" id="dCalc"></div>
+    </div>
+
+    <div class="card">
+      <h3>What the code thinks vs. the tape measure</h3>
+      <p class="small muted">Same move, two answers.</p>
+      <div class="bar2" id="dBar">
+        <i id="dBarA" style="width:50%">code</i><i id="dBarB" style="width:50%">tape</i>
+      </div>
+      <div class="legend2">
+        <span><i style="background:var(--mag)"></i> the code's <code>strecke</code></span>
+        <span><i style="background:var(--cy)"></i> real distance, 62.4&nbsp;mm wheel</span>
+      </div>
+      <div style="margin-top:14px" class="small">
+        <p style="margin:0"><b id="dRatio">12 %</b> of difference. So a call with
+        <code>amount = 21</code> rolls about <b id="dReal">23.6 cm</b>, not 21 cm.</p>
+      </div>
+      <div class="callout" style="margin-top:14px">
+        <span class="ico">!</span>
+        <p>Two explanations, and only a tape measure can choose: either the <b>5.56</b> is a
+        deliberate calibration that the team tuned to reality, or one of the two numbers is simply
+        wrong. Test: run <code>motors_pid(0, 300, 30)</code>, then measure. If it went
+        <b id="dTest">33.7 cm</b>, 5.56 is wrong. If it went exactly 30&nbsp;cm, the 5.56 is right and
+        the drive-base diameter is wrong.</p>
+      </div>
+      <p class="tiny" style="margin-top:10px">Arithmetic from your constants.
+      <span class="b b-inf">inference</span> &nbsp; <span class="b b-not">not measured</span></p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px">Why the two wheel counters are subtracted</h3>
+  <div class="grid g2" style="margin-top:12px">
+    <div class="card">
+      <p class="small muted" style="margin-bottom:0">The two drive motors are mounted as mirror
+      images, so when the robot goes straight forward one counter climbs and the other falls:</p>
+      <div class="calc" style="margin-top:12px">degLinks  = <span class="v">+1000</span>   <span class="c"># climbs</span>
+degRechts = <span class="v">−1000</span>   <span class="c"># falls</span>
+
+degMittel = (1000 − (−1000)) / 2 = <span class="v">1000</span></div>
+      <p class="small muted" style="margin-top:12px;margin-bottom:0">Subtracting therefore
+      <b>adds</b> them. If you added instead, you would get zero and the robot would think it had
+      not moved.</p>
+    </div>
+    <div class="card">
+      <p class="small muted" style="margin-bottom:0">The rest is just one wheel's turn count turned
+      into a distance:</p>
+      <div class="calc" style="margin-top:12px">strecke = (degMittel / 360) × 5.56 × π
+         <span class="c"># turns    # diameter</span>
+         <span class="c"># = turns × circumference (cm)</span>
+
+<span class="c">1 turn → 5.56 × 3.1416 = 17.47</span></div>
+      <p class="small muted" style="margin-top:12px;margin-bottom:0">Note <code>abs()</code> before the
+      division: the counter works for reverse too, but always adds to <code>strecke</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ BLOCKS -->
+<section id="blocks">
+  <div class="eyebrow">The other functions</div>
+  <h2>Six blocks, three of them unused</h2>
+  <p class="lede">Your file defines more helpers than it calls. Knowing which ones are live makes the
+  file much shorter than it looks.</p>
+
+  <div class="blocks" style="margin-top:20px">
+    <div class="block">
+      <span class="tag used">used 40+ times</span>
+      <h3>motors_pid(stp, speed, amount)</h3>
+      <p>Drive straight while holding a heading, for a set distance. The main workhorse.
+      Explained line by line above.</p>
+      <div class="use">Called from every mission.</div>
+    </div>
+
+    <div class="block">
+      <span class="tag used">used twice</span>
+      <h3>ausrichten1(stp) / ausrichten2(stp)</h3>
+      <p>Turn in place to a heading. Same code, different gain: <b>−3</b> for ausrichten1,
+      <b>−5</b> for ausrichten2. Gentler vs. faster.</p>
+      <div class="use">ausrichten1: Weg 7 + shared block · ausrichten2: everywhere else</div>
+    </div>
+
+    <div class="block">
+      <span class="tag used">used once</span>
+      <h3>motors_kurve1(target, speed, steering)</h3>
+      <p>Drive forward while rotating to a target heading. The only loop here with a
+      <code>wait(20)</code>, and the only one with a sane <code>&lt;= 3°</code> tolerance.</p>
+      <div class="use">Weg 1 only, for the 45° swing.</div>
+    </div>
+
+    <div class="block">
+      <span class="tag dead">never called</span>
+      <h3>ausrichten3(stp)</h3>
+      <p>Identical to ausrichten1/2 but with gain <b>−20</b>. Very aggressive: at 10° of error it
+      commands full motor speed in the opposite direction.</p>
+      <div class="use">Kept from an earlier version.</div>
+    </div>
+
+    <div class="block">
+      <span class="tag dead">never called</span>
+      <h3>motors_kurve(stp, speed, steering)</h3>
+      <p>An older turn-while-driving attempt with four nested <code>while</code> loops, one per
+      combination of direction and sign. Superseded by <code>motors_kurve1</code>.</p>
+      <div class="use">Legacy.</div>
+    </div>
+
+    <div class="block">
+      <span class="tag dead">never called</span>
+      <h3>motors_curve_gyro(end, radius, max)</h3>
+      <p>A proper radius-based curve: it computes inside/outside wheel speeds from
+      <code>axle_track = 120</code> and ramps up and down. The most “textbook” function in the
+      file.</p>
+      <div class="use">Never called. Note it uses <b>120</b>&nbsp;mm track while the DriveBase was
+      built with <b>106</b>&nbsp;mm.</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px">What the gain number does</h3>
+  <p class="small muted" style="max-width:66ch">The three <code>ausrichten</code> functions differ only
+  in one number. Drag the error slider to see the motor speed each one commands.</p>
+
+  <div class="card" style="margin-top:14px">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:center" class="dgrid">
+      <div>
+        <div class="row">
+          <label for="gErr">how far off are we?</label>
+          <output id="vGErr" for="gErr">10°</output>
+          <input type="range" id="gErr" min="1" max="90" step="1" value="10">
+          <span class="hint">Motor speed commanded by each version.</span>
+        </div>
+        <table class="read" style="margin-top:14px">
+          <tbody>
+            <tr><td>ausrichten1 (×3)</td><td id="gOut1">—</td></tr>
+            <tr><td>ausrichten2 (×5)</td><td id="gOut2">—</td></tr>
+            <tr><td>ausrichten3 (×20)</td><td id="gOut3">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <canvas id="gainCanvas" aria-label="Motor speed versus heading error for three gains" style="width:100%;height:190px;display:block"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ PROGRAM -->
+<section id="program">
+  <div class="eyebrow">The big picture</div>
+  <h2>What the program actually runs</h2>
+  <p class="lede">Seven routes, one after the other. Each one waits for the same two-button
+  handshake before it starts, so you choose when the robot begins each leg.</p>
+
+  <div class="callout gr" style="margin:18px 0">
+    <span class="ico">→</span>
+    <p><b>The ritual:</b> press <b>RIGHT</b>, then press <b>LEFT</b>. The robot beeps, resets the
+    gyro to 0&nbsp;°, and starts that route. It is not a menu — every route runs in order.</p>
+  </div>
+
+  <div class="mflow" id="mflow"></div>
+
+  <div class="msheet" id="msheet">
+    <div class="card">
+      <div class="ctlhead">
+        <h3 id="mTitle" style="margin:0">—</h3>
+        <span class="tiny" id="mCount"></span>
+      </div>
+      <p class="small muted" id="mDesc" style="margin:8px 0 0"></p>
+      <div class="msteps" id="mSteps"></div>
+      <div class="mtot" id="mTot"></div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:24px">
+    <div class="card">
+      <h3>Two parts of the file are switched off</h3>
+      <p class="small muted" style="margin-bottom:0">There are two blocks of <code>'''</code> in the
+      source. In Python, three quotes start a text string — so everything between them is
+      <b>not code</b>. That is how the four module-helper functions and the <code>#test</code> block at
+      the very bottom end up doing nothing at all.</p>
+    </div>
+    <div class="card">
+      <h3>The “menu” only picks a variant</h3>
+      <p class="small muted" style="margin-bottom:0"><code>ausgewaehlter_weg</code> looks like a menu
+      with a <code>break</code>, but it only chooses between two versions of one route. Routes 4–7
+      come after it and still run. Read the file top to bottom, not as a menu.</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px">Translate a call into words</h3>
+  <p class="small muted">Type the three numbers from any <code>motors_pid(...)</code> line in your file.</p>
+  <div class="card" style="margin-top:12px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div>
+        <label class="tiny" for="tStp">stp</label><br>
+        <input id="tStp" type="number" value="0" step="1" style="width:92px;font:inherit;font-family:var(--mono);padding:8px 10px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx)">
+      </div>
+      <div>
+        <label class="tiny" for="tSpeed">speed</label><br>
+        <input id="tSpeed" type="number" value="500" step="50" style="width:92px;font:inherit;font-family:var(--mono);padding:8px 10px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx)">
+      </div>
+      <div>
+        <label class="tiny" for="tAmount">amount</label><br>
+        <input id="tAmount" type="number" value="21" step="0.25" style="width:92px;font:inherit;font-family:var(--mono);padding:8px 10px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx)">
+      </div>
+    </div>
+    <div class="verdict" id="tOut" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<!-- ================================================================ CHECKS -->
+<section id="checks">
+  <div class="eyebrow">Honest review</div>
+  <h2>Ten things worth checking on the robot</h2>
+  <p class="lede">These are questions, not verdicts. Your robot has been driving, which means most of
+  this already works somehow. Each item comes with a test short enough to actually do.</p>
+
+  <div class="callout" style="margin:18px 0">
+    <span class="ico">!</span>
+    <p><b>Nothing in this section was tested on a hub.</b> It comes from reading the code and from
+    the published PyBricks documentation. The tests are what turn a guess into a fact.</p>
+  </div>
+
+  <div class="checks">
+
+    <div class="check">
+      <div class="n">1</div>
+      <div>
+        <h3>Is <code>motors.drive()</code> getting its arguments in the order you think?</h3>
+        <p>PyBricks documents the signature as <code>drive(speed, turn_rate)</code> — <b>speed first</b>
+        in mm/s, turn rate second in deg/s. Your code calls
+        <code>motors.drive(ric, speed_local)</code>, which puts the PID output first.</p>
+        <div class="test"><b>30-second test:</b> with the robot on blocks (wheels off the floor), run
+          <code>motors.drive(200, 0)</code> for a second. If the wheels roll forward, speed really is
+          the first argument. Then run <code>motors.drive(0, 90)</code> and see whether it spins.</div>
+        <div class="meta">
+          <span class="b b-doc">datasheet</span>
+          <span class="b b-not">not tested on your hub</span>
+          <span class="tiny">docs.pybricks.com, v2.0 / v3.5 / v3.6 / stable</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">2</div>
+      <div>
+        <h3>Which way does a positive steering value turn the robot?</h3>
+        <p>The loop is only stable if a positive <code>ric</code> pushes the <em>error towards zero</em>.
+        Your error is computed as roughly <code>g − stp</code>, so a positive error means “pointing too
+        far clockwise”. Positive steering must therefore turn anticlockwise. If it turns clockwise,
+        the loop is positive feedback and the robot spirals away.</p>
+        <div class="test"><b>Test:</b> put the robot on the floor, aim it roughly forward, and run
+          <code>motors_pid(0, 400, 10)</code>. Watch the first second. Does it curve <b>back</b> to 0°
+          (good) or <b>further away</b> (sign inverted)?</div>
+        <div class="meta">
+          <span class="b b-inf">inference</span>
+          <span class="b b-not">not tested</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">3</div>
+      <div>
+        <h3><code>abs(g - stp) &gt; 1800</code> looks like it means 180</h3>
+        <p>In all three <code>ausrichten</code> functions the “take the short way round” branch triggers
+        above <b>1800°</b> — five full turns — instead of 180°. So it never fires, and the robot always
+        turns the long way. Harmless for small angles, visible after a big turn like
+        <code>ausrichten2(-150)</code> following a heading of +100.</p>
+        <div class="test"><b>Test:</b> change 1800 to 180 in one copy and see whether the
+          <code>-150°</code> turn after Weg 4 gets quicker and less wobbly.</div>
+        <div class="meta"><span class="b b-inf">inference</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">4</div>
+      <div>
+        <h3><code>while g != stp</code> can loop forever</h3>
+        <p>That is an exact-equality test on a rounded float. If the heading settles on 34 while you
+        asked for 35, and the ±30 kick is not enough to move it, the loop never ends. Everything else
+        in the file uses inequalities; this is the odd one out.</p>
+        <div class="test"><b>Test:</b> replace with <code>while abs(g - stp) &gt; 2:</code> and compare
+          how the turns feel. Add a loop counter if you want a hard safety stop.</div>
+        <div class="meta"><span class="b b-inf">inference</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">5</div>
+      <div>
+        <h3>Heading is never wrapped to ±180°</h3>
+        <p><code>hub.imu.heading()</code> keeps counting past 180 and past 360; it does not wrap. So a
+        robot at heading 210 asked to hold −150 has an “error” of 360° and will spin all the way
+        round. Only <code>motors_curve_gyro</code> uses <code>abs()</code> to dodge this.</p>
+        <div class="test"><b>Test:</b> in a copy, print the heading after a long sequence. If you ever
+          see a number outside −180…360, this is already affecting your route.</div>
+        <div class="meta"><span class="b b-doc">datasheet</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">6</div>
+      <div>
+        <h3>The two wheel sizes disagree by 12 %</h3>
+        <p><code>DriveBase(wheel_diameter=62.4)</code> versus <code>5.56 × π</code> in the distance
+        formula. One of them is a calibration, the other is the truth. See
+        <a href="#distance">Distance</a> for the arithmetic.</p>
+        <div class="test"><b>Test:</b> tape-measure a <code>motors_pid(0, 300, 30)</code>. 30 cm means
+          5.56 is right; about 33.7 cm means the formula under-counts.</div>
+        <div class="meta"><span class="b b-inf">inference</span><span class="b b-not">not measured</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">7</div>
+      <div>
+        <h3>The loop has no <code>wait()</code> and prints every pass</h3>
+        <p>Two consequences: the loop rate is whatever Python manages that moment, and
+        <code>Kd</code> depends on that rate because <code>derr</code> has no time in it. A loop that
+        runs at 50 Hz on the bench and 20 Hz while printing over Bluetooth is tuning a moving
+        target.</p>
+        <div class="test"><b>Test:</b> remove the <code>print()</code>, add <code>wait(10)</code>, and
+          see whether the straight lines get straighter. If they do, the print was costing you
+          accuracy.</div>
+        <div class="meta"><span class="b b-inf">inference</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">8</div>
+      <div>
+        <h3><code>errsum</code> is never limited and never reset</h3>
+        <p>Harmless while <code>Ki = 0</code>. The day someone sets <code>Ki</code> to 0.1, the sum will
+        already be huge from the first few seconds of the move, and the robot will lurch. If you ever
+        enable I, clamp the sum and reset it at the start of every move.</p>
+        <div class="test"><b>Test:</b> set <code>Ki = 0.05</code> and watch the first straight. If it
+          swerves hard at the start, that is the accumulated sum arriving all at once.</div>
+        <div class="meta"><span class="b b-inf">inference</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">9</div>
+      <div>
+        <h3>Every move is followed by <code>motors.stop()</code> for a reason</h3>
+        <p>The braking formula bottoms out around half of <code>speed</code>, so the loop ends with
+        the robot still rolling. The <code>stop()</code> calls are not decoration — they are part of
+        the move. If one is ever missing, that leg will overshoot.</p>
+        <div class="test"><b>Test:</b> count the <code>motors_pid(...)</code> calls and the
+          <code>motors.stop()</code> calls. Find the one pair that does not match.</div>
+        <div class="meta"><span class="b b-inf">inference</span></div>
+      </div>
+    </div>
+
+    <div class="check">
+      <div class="n">10</div>
+      <div>
+        <h3>Three functions and one switch do nothing</h3>
+        <p><code>ausrichten3</code>, <code>motors_kurve</code> and <code>motors_curve_gyro</code> are
+        never called. <code>kurvejanein</code> is never set to 2, so its branches never run. None of
+        this is a bug — it is just 90 lines you can stop reading.</p>
+        <div class="test"><b>Test:</b> nothing to test. This is a licence to ignore them.</div>
+        <div class="meta"><span class="b b-inf">inference</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ GLOSSARY -->
+<section id="glossary">
+  <div class="eyebrow">Reference</div>
+  <h2>German words in the code</h2>
+  <p class="lede">The variable names are German. Here is every one that matters.</p>
+
+  <div class="card" style="margin-top:18px;padding:6px 6px 2px;overflow-x:auto">
+    <table class="gl">
+      <thead><tr><th>In the code</th><th>Means</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>strecke</td><td>distance travelled</td><td>motors_pid</td></tr>
+        <tr><td>reststrecke</td><td>distance still to go</td><td>motors_pid</td></tr>
+        <tr><td>anfahren</td><td>pulling away / setting off</td><td>motors_pid</td></tr>
+        <tr><td>ausrichten</td><td>to align, to square up</td><td>ausrichten1/2/3</td></tr>
+        <tr><td>kurve</td><td>curve, bend</td><td>motors_kurve, motors_kurve1</td></tr>
+        <tr><td>kurvejanein</td><td>“curve yes/no” switch</td><td>global, unused</td></tr>
+        <tr><td>modull / modulr</td><td>left / right attachment motor</td><td>setup</td></tr>
+        <tr><td>links / rechts</td><td>left / right</td><td>setup</td></tr>
+        <tr><td>geschwindigkeit</td><td>speed</td><td>motors_kurve</td></tr>
+        <tr><td>steuerung</td><td>steering</td><td>comments</td></tr>
+        <tr><td>weg</td><td>route, way</td><td>section comments</td></tr>
+        <tr><td>ausgewaehlter_weg</td><td>selected route</td><td>the “menu”</td></tr>
+        <tr><td>gedrueckte_tasten</td><td>pressed buttons</td><td>the “menu”</td></tr>
+        <tr><td>Fehler</td><td>error</td><td>comments</td></tr>
+        <tr><td>Fehlersumme</td><td>sum of errors (the integral)</td><td>comments</td></tr>
+        <tr><td>Fehlerdifferenz</td><td>difference of errors (the derivative)</td><td>comments</td></tr>
+        <tr><td>Gierwinkel</td><td>yaw angle = heading</td><td>comments</td></tr>
+        <tr><td>Drehrichtung umkehren</td><td>reverse the direction of rotation</td><td>comments</td></tr>
+        <tr><td>Motordrosselung</td><td>motor throttling</td><td>comments</td></tr>
+        <tr><td>stp</td><td>setpoint (English abbreviation)</td><td>everywhere</td></tr>
+        <tr><td>ric</td><td>the steering output</td><td>motors_pid</td></tr>
+        <tr><td>err, erro, derr, errsum</td><td>error, old error, error change, error sum</td><td>motors_pid</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details class="fold" style="margin-top:22px">
+    <summary>If you have never written Python — the eight things this file uses</summary>
+    <div class="inner">
+      <ul>
+        <li><b>Variable</b> — a named box. <code>kp = 4</code> puts 4 in a box called <code>kp</code>.</li>
+        <li><b>Function</b> — a named recipe. <code>def motors_pid(...)</code> defines one;
+          <code>motors_pid(0, 500, 21)</code> runs it with those three ingredients.</li>
+        <li><b>Argument</b> — an ingredient. The three numbers in the brackets.</li>
+        <li><b><code>if</code> / <code>elif</code> / <code>else</code></b> — choose a path. Only one
+          branch runs.</li>
+        <li><b><code>while</code></b> — repeat until the condition stops being true. This is what makes
+          it a <em>loop</em>.</li>
+        <li><b>Indentation</b> — the spaces at the start of a line <em>are</em> the structure. Four more
+          spaces means “inside the block above”.</li>
+        <li><b><code>int(...)</code></b> — throw away the decimal part. <code>int(4.9)</code> is 4, and
+          <code>int(-4.9)</code> is −4 (it truncates towards zero; it does not round).</li>
+        <li><b><code>#</code></b> — a comment. Python ignores the rest of the line. So does your
+          robot.</li>
+      </ul>
+      <p style="margin:12px 0 0">A unit like <code>motors.run(200)</code> means “run the motor at 200
+      <em>degrees per second</em>”. Motor speed is in deg/s; motor position is in degrees. Neither is
+      a distance in centimetres until you multiply by the wheel.</p>
+    </div>
+  </details>
+</section>
+
+</main>
+
+<footer>
+  <div class="in">
+    <p style="margin-bottom:8px"><b style="color:var(--tx2)">Where this came from.</b> Written
+    2026-10-28 from the source you pasted into the chat: the <code>motors_pid</code>,
+    <code>ausrichten1/2/3</code>, <code>motors_kurve1</code>, <code>motors_kurve</code>,
+    <code>motors_curve_gyro</code> functions and the seven mission blocks. Nothing was executed on a
+    hub. The simulator is a simplified drawing, not a model of this robot.</p>
+    <p style="margin-bottom:8px"><b style="color:var(--tx2)">Evidence labels used above.</b>
+    <span class="b b-doc">datasheet</span> from the PyBricks documentation ·
+    <span class="b b-inf">inference</span> reasoned from the code ·
+    <span class="b b-meas" style="display:none">measured</span> nothing here ·
+    <span class="b b-not">not measured</span> needs a tape measure or a test run.</p>
+    <p style="margin-bottom:0">Related notes: <code>docs/Reference/PID Tuning.md</code> ·
+    <code>docs/Systems/Motion Control.md</code> · <code>docs/Reference/PyBricks API Cheatsheet.md</code>
+    · <code>docs/Guides/Agent Quickstart.md</code></p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================ helpers */
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const sign = (v) => (v > 0 ? 1 : v < 0 ? -1 : 0);
+  const D2R = Math.PI / 180;
+
+  /* ============================================================ theme */
+  const root = document.documentElement;
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem("pid-theme"); } catch (e) {}
+    if (saved) root.setAttribute("data-theme", saved);
+    else if (window.matchMedia && !window.matchMedia("(prefers-color-scheme: dark)").matches)
+      root.setAttribute("data-theme", "light");
+    refreshColors();
+  }
+  const COL = {};
+  function refreshColors() {
+    const cs = getComputedStyle(root);
+    const get = (n) => cs.getPropertyValue(n).trim();
+    COL.tx = get("--tx"); COL.tx2 = get("--tx2"); COL.tx3 = get("--tx3");
+    COL.line = get("--line2"); COL.panel = get("--panel");
+    COL.mag = get("--mag"); COL.cy = get("--cy"); COL.gr = get("--gr");
+    COL.am = get("--am"); COL.rd = get("--rd");
+  }
+  $("themeBtn").addEventListener("click", () => {
+    const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("pid-theme", next); } catch (e) {}
+    refreshColors();
+    drawSim();
+    drawGain();
+  });
+  initTheme();
+
+  /* ============================================================ scrollspy */
+  const navLinks = Array.from(document.querySelectorAll("#nav a"));
+  const sections = navLinks
+    .map((a) => document.querySelector(a.getAttribute("href")))
+    .filter(Boolean);
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        navLinks.forEach((a) =>
+          a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id)
+        );
+      });
+    }, { rootMargin: "-45% 0px -50% 0px", threshold: 0 });
+    sections.forEach((s) => io.observe(s));
+  }
+
+  /* ============================================================ canvas prep */
+  function prep(canvas) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth || 300;
+    const h = canvas.clientHeight || 200;
+    const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+    if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  /* ============================================================ SIMULATOR */
+  const K_TURN = 1.2;          // deg/s of robot rotation per unit of ric (illustrative)
+  const TURN_LAG = 0.12;       // s — the robot cannot change turn rate instantly
+  const WHEEL_MM = 62.4;       // DriveBase value
+  const FORMULA_MM = 55.6;     // 5.56 cm used by the distance formula
+  const UNIT_TO_CM = FORMULA_MM / WHEEL_MM; // code distance unit -> true cm factor
+  const TRACK = 106;
+
+  const simCanvas = $("simCanvas");
+  const chartCanvas = $("chartCanvas");
+
+  let S = null;
+  let ghost = null;
+  let running = false;
+  let lastFrame = 0;
+  let acc = 0;
+  let simHist = [];
+
+  function params() {
+    return {
+      kp: Number($("sKp").value),
+      ki: Number($("sKi").value),
+      kd: Number($("sKd").value),
+      speed: Number($("sSpeed").value),
+      amount: Number($("sAmount").value),
+      startErr: Number($("sErr").value),
+      hz: Number($("sHz").value),
+      signFlip: $("signChk").checked ? 1 : -1,
+      stp: 0
+    };
+  }
+
+  function newState(P) {
+    return {
+      th: P.startErr, x: 0, y: 0,
+      errsum: 0, erro: 0, anfahren: 0, lastLocal: -P.speed,
+      unitDist: 0, trail: [], t: 0,
+      err: 0, ric: 0, derr: 0, speedLocal: P.speed, turn: 0, rate: 0, v: 0,
+      done: false, stableSince: null, crossings: 0, lastSign: 0, peak: 0
+    };
+  }
+
+  function resetSim(keepRunning) {
+    const P = params();
+    S = newState(P);
+    ghost = newState(P);
+    simHist = [];
+    if (!keepRunning) running = false;
+    acc = 0;
+    $("btnRun").textContent = running ? "❚❚ Pause" : "▶ Run";
+    $("verdict").innerHTML = running ? "Running…" : "Press <b>Run</b> to start.";
+    drawSim();
+    drawChart();
+  }
+
+  function stepOnce(st, P, dt, isGhost) {
+    if (st.done) return;
+    // --- speed ramp, straight out of motors_pid
+    const speedIn = -P.speed;                       // speed = speed * -1
+    const forward = speedIn > 0;
+    const rest = P.amount - st.unitDist;
+    let local;
+    if (rest < 1) {
+      local = st.lastLocal;
+    } else if (rest < Math.abs(speedIn / 10)) {
+      local = Math.trunc(
+        (Math.abs(speedIn) - Math.abs(speedIn) / ((rest + 10) / 5)) * (sign(speedIn) || 1)
+      );
+    } else if (st.anfahren < Math.trunc(Math.abs(speedIn) / 15)) {
+      st.anfahren += 1;
+      local = Math.trunc(5 * st.anfahren * (sign(speedIn) || 1));
+    } else {
+      local = speedIn;
+    }
+    st.lastLocal = local;
+    st.speedLocal = local;
+
+    // --- PID
+    const g = st.th;
+    const err = forward ? g - P.stp : P.stp - g;
+    const derr = err - st.erro;
+    st.erro = err;
+    st.errsum += err;
+    const gains = isGhost ? { kp: 0, ki: 0, kd: 0 } : P;
+    let ric = Math.trunc(gains.kp * err + gains.ki * st.errsum + gains.kd * derr);
+    ric = Math.trunc(ric * (sign(speedIn) || 1));
+
+    st.err = err; st.derr = derr; st.ric = ric;
+    st.peak = Math.max(st.peak, Math.abs(err));
+
+    // --- physics (a deliberately simple model, with a little rotational inertia)
+    // `local` is the function's internal (already negated) speed; the robot itself
+    // travels in the direction the caller asked for.
+    const v = -local;
+    st.v = v;
+    const cmdTurn = P.signFlip * ric * K_TURN;
+    st.rate += (cmdTurn - st.rate) * (dt / TURN_LAG);
+    st.turn = st.rate;
+    st.th += st.rate * dt;
+    st.x += Math.sin(st.th * D2R) * v * dt;
+    st.y += Math.cos(st.th * D2R) * v * dt;
+    st.t += dt;
+    st.trail.push([st.x, st.y]);
+    if (st.trail.length > 4000) st.trail.shift();
+
+    // --- distance bookkeeping, matching the code's own unit
+    st.unitDist += (Math.abs(local) * dt) / 10 * UNIT_TO_CM;
+
+    // --- metrics
+    if (Math.abs(err) < 1.5) {
+      if (st.stableSince === null) st.stableSince = st.t;
+    } else {
+      st.stableSince = null;
+    }
+    const s = sign(err);
+    if (s !== 0) {
+      if (st.lastSign !== 0 && s !== st.lastSign && st.t > 0.15) st.crossings++;
+      st.lastSign = s;
+    }
+
+    if (st.unitDist >= P.amount) st.done = true;
+  }
+
+  function stepFrame(now) {
+    if (!running) return;
+    const P = params();
+    const dt = 1 / P.hz;
+    if (!lastFrame) lastFrame = now;
+    let elapsed = (now - lastFrame) / 1000;
+    lastFrame = now;
+    if (elapsed > 0.25) elapsed = 0.25;
+    acc += elapsed;
+    let guard = 0;
+    while (acc >= dt && guard < 8) {
+      stepOnce(S, P, dt, false);
+      if ($("ghostChk").checked) stepOnce(ghost, P, dt, true);
+      simHist.push({ t: S.t, err: S.err, ric: S.ric });
+      acc -= dt;
+      guard++;
+    }
+    drawSim();
+    drawChart();
+    updateReadout(P);
+
+    if (S.done) {
+      running = false;
+      $("btnRun").textContent = "▶ Run again";
+      $("verdict").innerHTML = verdictText(P);
+    } else {
+      requestAnimationFrame(stepFrame);
+    }
+  }
+
+  function verdictText(P) {
+    const total = S.t;
+    const settle = S.stableSince;
+    const maxErr = S.peak;
+    const cross = S.crossings;
+    let head, body;
+    if (P.signFlip === 1) {
+      head = "🔄 Steering sign flipped.";
+      body = "The push makes the error bigger, so the push gets bigger. The robot spirals off. " +
+             "This is what a single wrong sign looks like — and it never fixes itself.";
+    } else if (P.kp === 0 && P.ki === 0 && P.kd === 0) {
+      head = "⬆️ No PID.";
+      body = "With every gain at zero there is no steering at all, so the robot keeps the " +
+             "wrong heading it started with. Everything else on this page is trying to fix that.";
+    } else if (Math.abs(maxErr) > Math.abs(P.startErr) + 8) {
+      head = "📈 Error grew.";
+      body = "The robot ended further off than it started. Check the sign of the steering.";
+    } else if (cross >= 3) {
+      head = "〰️ Nervous.";
+      body = "It crossed the target " + cross + " times — that is over-correction. " +
+             "Kp is a bit high, or Kd is too low. Try Kd " + (P.kd + 1).toFixed(2) + ".";
+    } else if (cross >= 2) {
+      head = "🤏 A small overshoot.";
+      body = "One bounce before settling. That is normal and often fine at a competition. " +
+             "A little more Kd would flatten it.";
+    } else if (settle === null) {
+      head = "🐢 Never arrived.";
+      body = "The error was still above 1.5° when the distance ran out. Kp is too low for this speed.";
+    } else if (settle < total * 0.35) {
+      head = "✅ Clean.";
+      body = "Settled after " + settle.toFixed(2) + " s with " + cross + " overshoot(s). " +
+             "This is roughly what a well-tuned straight looks like.";
+    } else {
+      head = "🫧 Slow but steady.";
+      body = "It did settle, at " + settle.toFixed(2) + " s. Nothing wrong with that — " +
+             "just not much margin if the battery is low.";
+    }
+    return "<b>" + head + "</b> " + body;
+  }
+
+  function updateReadout(P) {
+    const f = (n, d) => Number(n).toFixed(d === undefined ? 1 : d);
+    $("oG").textContent = f(S.th);
+    $("oStp").textContent = P.stp;
+    $("oErr").textContent = f(S.err);
+    $("oDerr").textContent = f(S.derr);
+    $("oSum").textContent = f(S.errsum, 0);
+    $("oRic").textContent = S.ric;
+    $("oDist").textContent = f(S.unitDist);
+    $("oRest").textContent = f(Math.max(0, P.amount - S.unitDist));
+    $("chartNow").textContent = "err " + f(S.err) + "° · ric " + S.ric;
+  }
+
+  function drawSim() {
+    if (!S) return;
+    const { ctx, w, h } = prep(simCanvas);
+    const P = params();
+
+    // field extent
+    const fieldH = clamp((P.amount * 10) / UNIT_TO_CM + 240, 520, 1600);
+    const scale = Math.min((h - 70) / fieldH, (w - 60) / 620);
+    const ox = w / 2, oy = h - 46;
+
+    const X = (mm) => ox + mm * scale;
+    const Y = (mm) => oy - mm * scale;
+
+    // grid
+    ctx.strokeStyle = COL.line;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.35;
+    for (let mm = 0; mm < fieldH; mm += 100) {
+      ctx.beginPath(); ctx.moveTo(0, Y(mm)); ctx.lineTo(w, Y(mm)); ctx.stroke();
+    }
+    for (let mm = -300; mm <= 300; mm += 100) {
+      ctx.beginPath(); ctx.moveTo(X(mm), 0); ctx.lineTo(X(mm), h); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // start pad
+    ctx.strokeStyle = COL.tx3;
+    ctx.setLineDash([4, 5]);
+    ctx.beginPath(); ctx.moveTo(X(-90), Y(0)); ctx.lineTo(X(90), Y(0)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // target heading line
+    ctx.strokeStyle = COL.mag;
+    ctx.setLineDash([7, 6]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(X(0), Y(0));
+    ctx.lineTo(X(Math.sin(P.stp * D2R) * 340), Y(Math.cos(P.stp * D2R) * 340));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = COL.mag;
+    ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("target heading", X(0), Y(350));
+
+    // ghost trail
+    if ($("ghostChk").checked && ghost) drawRobot(ctx, ghost, X, Y, scale, true);
+    // trail
+    if (S.trail.length > 1) {
+      ctx.strokeStyle = COL.cy;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let i = 0; i < S.trail.length; i++) {
+        const p = S.trail[i];
+        if (i === 0) ctx.moveTo(X(p[0]), Y(p[1]));
+        else ctx.lineTo(X(p[0]), Y(p[1]));
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    drawRobot(ctx, S, X, Y, scale, false);
+
+    // finish marker when done
+    if (S.done) {
+      ctx.fillStyle = COL.gr;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(X(S.x), Y(S.y), 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawRobot(ctx, st, X, Y, scale, isGhost) {
+    const px = X(st.x), py = Y(st.y);
+    const L = clamp(110 * scale * 1.3, 22, 62);
+    const W = L * 0.82;
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(st.th * D2R);
+    ctx.globalAlpha = isGhost ? 0.28 : 1;
+
+    // wheels
+    const wheelV = (st.turn / 360) * Math.PI * TRACK;
+    const lw = clamp(st.v + wheelV, -1200, 1200);
+    const rw = clamp(st.v - wheelV, -1200, 1200);
+    const wLen = L * 0.42;
+    const wheelColor = (v) => (Math.abs(v) < 5 ? COL.tx3 : (v > 0 ? COL.cy : COL.am));
+
+    ctx.fillStyle = isGhost ? COL.tx3 : wheelColor(lw);
+    ctx.fillRect(-W / 2 - 4, -L / 2 + 4, 5, wLen);
+    ctx.fillStyle = isGhost ? COL.tx3 : wheelColor(rw);
+    ctx.fillRect(W / 2 - 1, -L / 2 + 4, 5, wLen);
+
+    // body
+    ctx.beginPath();
+    const r = Math.max(3, W * 0.16);
+    roundRect(ctx, -W / 2, -L / 2, W, L, r);
+    ctx.fillStyle = isGhost ? "transparent" : COL.panel;
+    ctx.fill();
+    ctx.lineWidth = isGhost ? 1.5 : 2;
+    ctx.strokeStyle = isGhost ? COL.tx3 : COL.mag;
+    ctx.stroke();
+
+    // hub + nose
+    if (!isGhost) {
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(2.5, W * 0.16), 0, Math.PI * 2);
+      ctx.fillStyle = COL.mag;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-W * 0.22, -L / 2 + 3);
+    ctx.lineTo(W * 0.22, -L / 2 + 3);
+    ctx.lineTo(0, -L / 2 - L * 0.13);
+    ctx.closePath();
+    ctx.fillStyle = isGhost ? COL.tx3 : COL.cy;
+    ctx.fill();
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawChart() {
+    const { ctx, w, h } = prep(chartCanvas);
+    const pad = { l: 30, r: 8, t: 8, b: 14 };
+    const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
+
+    let span = Math.max(1, S ? S.t : 1);
+    let peak = Math.max(20, S ? S.peak * 1.15 : 20);
+    const xOf = (t) => pad.l + (t / span) * iw;
+    const yOf = (e) => pad.t + ih / 2 - (e / peak) * (ih / 2);
+
+    ctx.strokeStyle = COL.line;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, yOf(0)); ctx.lineTo(w - pad.r, yOf(0)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, h - pad.b); ctx.stroke();
+
+    ctx.fillStyle = COL.tx3;
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "right";
+    ctx.fillText("0°", pad.l - 5, yOf(0) + 3);
+    ctx.fillText("+" + Math.round(peak) + "°", pad.l - 5, pad.t + 9);
+    ctx.fillText("−" + Math.round(peak) + "°", pad.l - 5, h - pad.b);
+
+    if (simHist.length > 1) {
+      ctx.strokeStyle = COL.mag;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      simHist.forEach((p, i) => {
+        const x = xOf(p.t), y = yOf(p.err);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // last point
+      const last = simHist[simHist.length - 1];
+      ctx.fillStyle = COL.mag;
+      ctx.beginPath();
+      ctx.arc(xOf(last.t), yOf(last.err), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // controls
+  const sliders = [
+    ["sKp", "vKp", (v) => v],
+    ["sKd", "vKd", (v) => v],
+    ["sKi", "vKi", (v) => v],
+    ["sSpeed", "vSpeed", (v) => v],
+    ["sAmount", "vAmount", (v) => v],
+    ["sErr", "vErr", (v) => v + "°"],
+    ["sHz", "vHz", (v) => v + " /s"]
+  ];
+  sliders.forEach(([id, out, fmt]) => {
+    const el = $(id);
+    const o = $(out);
+    const sync = () => { o.textContent = fmt(Number(el.value)); };
+    el.addEventListener("input", () => {
+      sync();
+      clearPreset();
+      if (id !== "sHz") resetSim(false);
+      else drawSim();
+    });
+    sync();
+  });
+
+  function clearPreset() {
+    document.querySelectorAll(".preset").forEach((b) => b.classList.remove("on"));
+  }
+  document.querySelectorAll(".preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      clearPreset();
+      btn.classList.add("on");
+      const p = btn.dataset.p;
+      const set = (kp, ki, kd) => {
+        $("sKp").value = kp; $("sKi").value = ki; $("sKd").value = kd;
+        $("vKp").textContent = kp; $("vKi").textContent = ki; $("vKd").textContent = kd;
+      };
+      if (p === "code") set(4, 0, 1);
+      if (p === "p") set(4, 0, 0);
+      if (p === "hard") set(12, 0, 0.5);
+      if (p === "soft") set(0.8, 0, 0);
+      if (p === "i") set(3, 0.4, 0.5);
+      if (p === "none") set(0, 0, 0);
+      resetSim(false);
+    });
+  });
+
+  $("btnRun").addEventListener("click", () => {
+    if (running) {
+      running = false;
+      $("btnRun").textContent = "▶ Run";
+      return;
+    }
+    if (S && S.done) resetSim(false);
+    running = true;
+    lastFrame = 0;
+    $("btnRun").textContent = "❚❚ Pause";
+    $("verdict").innerHTML = "Running…";
+    requestAnimationFrame(stepFrame);
+  });
+
+  $("btnStep").addEventListener("click", () => {
+    if (!S) resetSim(false);
+    running = false;
+    $("btnRun").textContent = "▶ Run";
+    const P = params();
+    stepOnce(S, P, 1 / P.hz, false);
+    if ($("ghostChk").checked) stepOnce(ghost, P, 1 / P.hz, true);
+    simHist.push({ t: S.t, err: S.err, ric: S.ric });
+    drawSim(); drawChart(); updateReadout(P);
+    $("verdict").innerHTML = S.done ? verdictText(P) : "<b>One pass.</b> The loop ran once; the table above holds the values it used.";
+  });
+
+  $("btnKick").addEventListener("click", () => {
+    if (!S) resetSim(false);
+    S.th += 12;
+    if (ghost) ghost.th += 12;
+    drawSim();
+  });
+
+  $("btnReset").addEventListener("click", () => resetSim(false));
+  $("ghostChk").addEventListener("change", () => { resetSim(false); });
+  $("signChk").addEventListener("change", () => { resetSim(false); });
+
+  // boot
+  resetSim(false);
+
+  /* ============================================================ CODE TABS */
+  const tabs = Array.from(document.querySelectorAll(".tab"));
+  const panes = Array.from(document.querySelectorAll(".codepane"));
+  tabs.forEach((t) => {
+    t.addEventListener("click", () => {
+      tabs.forEach((x) => { x.classList.remove("on"); x.setAttribute("aria-selected", "false"); });
+      panes.forEach((p) => p.classList.toggle("on", p.dataset.pane === t.dataset.tab));
+      t.classList.add("on");
+      t.setAttribute("aria-selected", "true");
+    });
+  });
+
+  document.querySelectorAll(".codepane").forEach((pane) => {
+    const notes = Array.from(pane.querySelectorAll(".note"));
+    const lines = Array.from(pane.querySelectorAll(".cl.has"));
+    const clear = () => {
+      notes.forEach((n) => n.classList.remove("on"));
+      lines.forEach((l) => l.classList.remove("on"));
+    };
+    const pick = (n) => {
+      clear();
+      const note = notes.find((x) => x.dataset.n === n);
+      const line = lines.find((x) => x.dataset.n === n);
+      if (note) note.classList.add("on");
+      if (line) line.classList.add("on");
+    };
+    lines.forEach((l) => l.addEventListener("click", () => pick(l.dataset.n)));
+    notes.forEach((n) => n.addEventListener("click", () => pick(n.dataset.n)));
+    pane.addEventListener("keydown", (e) => { if (e.key === "Escape") clear(); });
+  });
+
+  /* ============================================================ DISTANCE */
+  function drawDistance() {
+    const turns = Number($("dTurns").value);
+    $("vTurns").textContent = turns.toFixed(2);
+
+    const deg = Math.round(turns * 360);
+    const other = -deg;
+    const mid = (deg - other) / 2;
+    const codeCm = (Math.abs(mid) / 360) * 5.56 * Math.PI;
+    const trueCm = (Math.abs(mid) / 360) * (WHEEL_MM / 10) * Math.PI;
+
+    $("dCalc").innerHTML =
+      'degLinks  = <span class="v">' + deg + '</span>\n' +
+      'degRechts = <span class="v">' + other + '</span>\n' +
+      'degMittel = (' + deg + ' − (' + other + ')) / 2 = <span class="v">' + mid + '</span>\n\n' +
+      'strecke = (' + mid + '/360) × 5.56 × π = <span class="v">' + codeCm.toFixed(2) + '</span>  <span class="c"># code units (cm)</span>\n' +
+      'real         = (' + mid + '/360) × 6.24 × π = <span class="v">' + trueCm.toFixed(2) + '</span>  <span class="c"># cm</span>';
+
+    const ratio = WHEEL_MM / FORMULA_MM;
+    $("dRatio").textContent = Math.round((ratio - 1) * 100) + " %";
+    $("dReal").textContent = (21 * ratio).toFixed(1) + " cm";
+    $("dTest").textContent = (30 * ratio).toFixed(1) + " cm";
+
+    const a = 1 / ratio, b = 1;
+    const total = a + b;
+    $("dBarA").style.width = (a / total * 100).toFixed(1) + "%";
+    $("dBarB").style.width = (b / total * 100).toFixed(1) + "%";
+    $("dBarA").textContent = codeCm.toFixed(1) + " cm";
+    $("dBarB").textContent = trueCm.toFixed(1) + " cm";
+  }
+  $("dTurns").addEventListener("input", drawDistance);
+  drawDistance();
+
+  /* ============================================================ GAIN CHART */
+  function drawGain() {
+    const err = Number($("gErr").value);
+    $("vGErr").textContent = err + "°";
+
+    const speeds = [3, 5, 20].map((k) => Math.round(err * k) + 30);
+    $("gOut1").textContent = speeds[0] + "°/s";
+    $("gOut2").textContent = speeds[1] + "°/s";
+    $("gOut3").textContent = speeds[2] + "°/s";
+
+    const c = $("gainCanvas");
+    const { ctx, w, h } = prep(c);
+    const pad = { l: 34, r: 10, t: 12, b: 22 };
+    const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
+    const maxX = 90, maxY = 1000;
+    const X = (v) => pad.l + (v / maxX) * iw;
+    const Y = (v) => pad.t + ih - (v / maxY) * ih;
+
+    ctx.strokeStyle = COL.line; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, h - pad.b); ctx.lineTo(w - pad.r, h - pad.b); ctx.stroke();
+
+    ctx.fillStyle = COL.tx3;
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("error (°)", pad.l + iw / 2, h - 6);
+    ctx.textAlign = "right";
+    ctx.fillText("1000", pad.l - 5, pad.t + 8);
+    ctx.fillText("0", pad.l - 5, h - pad.b);
+
+    const colors = [COL.cy, COL.gr, COL.rd];
+    [3, 5, 20].forEach((k, idx) => {
+      ctx.strokeStyle = colors[idx];
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let e = 0; e <= maxX; e += 2) {
+        const v = Math.min(maxY, e * k + 30);
+        if (e === 0) ctx.moveTo(X(e), Y(v)); else ctx.lineTo(X(e), Y(v));
+      }
+      ctx.stroke();
+    });
+
+    // cursor
+    ctx.strokeStyle = COL.tx3;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(X(err), pad.t); ctx.lineTo(X(err), h - pad.b); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = COL.cy; ctx.fillText("×3", pad.l + 6, pad.t + 12);
+    ctx.fillStyle = COL.gr; ctx.fillText("×5", pad.l + 6, pad.t + 25);
+    ctx.fillStyle = COL.rd; ctx.fillText("×20", pad.l + 6, pad.t + 38);
+  }
+  $("gErr").addEventListener("input", drawGain);
+  drawGain();
+
+  /* ============================================================ TRANSLATOR */
+  function translate() {
+    const stp = Number($("tStp").value) || 0;
+    const sp = Number($("tSpeed").value) || 0;
+    const am = Number($("tAmount").value) || 0;
+    const cm = am * (WHEEL_MM / FORMULA_MM);
+
+    let dir;
+    if (sp === 0) dir = "at zero speed — that line will not move the robot (and the code divides by it)";
+    else dir = sp > 0 ? "at " + sp + " mm/s" : "at " + Math.abs(sp) + " mm/s";
+
+    const html =
+      "<b>Drive while holding heading " + stp + "°</b>, " + dir + ", for <b>" +
+      am.toFixed(2) + " distance units</b>.<br>" +
+      "<span class='muted small'>In tape-measure terms that is about <b>" + cm.toFixed(1) +
+      " cm</b> if the wheel really is 62.4 mm. The robot will be steering " +
+      "the whole way, not just drifting. Add <code>motors.stop()</code> after it or it keeps rolling.</span>";
+    $("tOut").innerHTML = html;
+  }
+  ["tStp", "tSpeed", "tAmount"].forEach((id) => $(id).addEventListener("input", translate));
+  translate();
+
+  /* ============================================================ MISSIONS */
+  const MISSIONS = [
+    {
+      id: "w1", title: "Weg 1 — Steine", sub: "Stones",
+      desc: "Drive out, swing 45°, spin to drop the stones, then reverse out.",
+      steps: [
+        ["pid", 0, -400, 2], ["pid", 0, 500, 21], ["turn", -30], ["pid", -30, 500, 30],
+        ["turn", 35], ["pid", 35, 500, 8], ["stop"], ["curve1", 45, 100, 10],
+        ["spin", 200, 1000], ["mod", "r", 500, 520], ["modx", "l", 400, -200],
+        ["wait", 1000], ["mod", "r", 500, -520], ["pid", 45, -200, 12], ["stop"],
+        ["turn", 27], ["pid", 27, -700, 2], ["turn", -25], ["pid", -25, -900, 55], ["stop"]
+      ]
+    },
+    {
+      id: "w2", title: "Weg 2 — Umarmung", sub: "The hug",
+      desc: "Short forward, turn left, grab, and reverse away.",
+      steps: [
+        ["pid", 0, -400, 2], ["pid", 0, 400, 4], ["turn", -45], ["pid", -45, 500, 30],
+        ["pid", -45, 300, 10], ["stop"], ["mod", "r", 600, 1000], ["mod", "l", -600, 1100],
+        ["wait", 100], ["mod", "r", 600, -200], ["mod", "l", 800, 1100],
+        ["stopmod"], ["pid", -45, -400, 15], ["turn", -65], ["pid", -65, -900, 30], ["stop"]
+      ]
+    },
+    {
+      id: "wa", title: "A — “links”", sub: "Variant chosen by LEFT",
+      desc: "The shared block, then the left-hand variant with the extra arm move.",
+      steps: [
+        ["pid", 0, -400, 2], ["pid", 0, 400, 37.5], ["stop"],
+        ["repeat4"], ["turn", 0], ["pid", 0, 400, 13.5], ["stop"],
+        ["turn", -40], ["pid", -40, 400, 14], ["turn", -90], ["pid", -90, 400, 22],
+        ["stop"], ["wait", 500], ["turn1", 0], ["pid", 0, 150, 10], ["stop"],
+        ["mod", "l", 100, 600], ["pid", 0, -400, 15], ["stop"],
+        ["modx", "l", 200, -600], ["wait", 700], ["pid", 0, 200, 15], ["wait", 300],
+        ["pid", 0, -500, 5], ["stop"], ["wait", 200],
+        ["turn1", -90], ["pid", -90, 700, 13], ["stop"], ["wait", 200],
+        ["turn", -150], ["pid", -150, 700, 27.5], ["turn", -105], ["pid", -105, 900, 60], ["stop"]
+      ]
+    },
+    {
+      id: "wb", title: "B — “rechts”", sub: "Variant chosen by RIGHT",
+      desc: "The same shared block, then the right-hand variant: one fewer arm move.",
+      steps: [
+        ["pid", 0, -400, 2], ["pid", 0, 400, 37.5], ["stop"],
+        ["repeat4"], ["turn", 0], ["pid", 0, 400, 13.5], ["stop"],
+        ["turn", -40], ["pid", -40, 400, 14], ["turn", -90], ["pid", -90, 400, 22],
+        ["stop"], ["wait", 500], ["turn1", 0], ["pid", 0, 150, 10], ["stop"],
+        ["wait", 500], ["pid", 0, -500, 5], ["stop"], ["wait", 200],
+        ["turn1", -90], ["pid", -90, 700, 13], ["stop"], ["wait", 200],
+        ["turn", -150], ["pid", -150, 700, 27.5], ["turn", -105], ["pid", -105, 900, 60], ["stop"]
+      ]
+    },
+    {
+      id: "w4", title: "Weg 4 — Schwinger", sub: "The swinger",
+      desc: "Reach out with the left module, then a two-module grab-and-swing.",
+      steps: [
+        ["pid", 0, -400, 27], ["modx", "l", -900, 450], ["turn", 35], ["pid", 35, -400, 21],
+        ["turn", 90], ["pid", 90, 400, 20], ["stop"],
+        ["mod", "r", 400, 380], ["modx", "l", 900, 600], ["mod", "r", 400, -500],
+        ["mod", "l", -900, 500], ["modx", "r", 400, -350],
+        ["pid", 90, -400, 14.5], ["turn", 20], ["pid", 20, 800, 45], ["stop"]
+      ]
+    },
+    {
+      id: "w5", title: "Weg 5 — schwarz", sub: "Black",
+      desc: "Drive out, run the left arm until it jams against something, then a spin and back.",
+      steps: [
+        ["pid", 5, 400, 45], ["stop"], ["stall", "l", -600], ["pid", 2, 500, 4], ["stop"],
+        ["modx", "r", -800, 900], ["spin", 100, 1000], ["mod", "l", 800, 860],
+        ["pid", 5, -500, 55], ["stop"]
+      ]
+    },
+    {
+      id: "w6", title: "Weg 6 — Lore", sub: "Trolley to the other team",
+      desc: "Three legs at 0°, 90° and 180°, arm work in between, then a diagonal exit.",
+      steps: [
+        ["pid", 0, 400, 2], ["pid", 0, -600, 43], ["turn", 90], ["pid", 90, -600, 23.5],
+        ["turn", 180], ["pid", 180, -600, 5.25], ["stop"],
+        ["mod", "r", 400, -200], ["pid", 180, 300, 6], ["stop"],
+        ["mod", "r", 200, 140], ["pid", 180, 250, 20], ["stop"],
+        ["mod", "l", 1200, -1000], ["wait", 200], ["mod", "l", 500, 400],
+        ["mod", "l", 1200, -400], ["wait", 200], ["mod", "l", 500, 800],
+        ["pid", 180, -600, 3], ["modx", "r", 150, -200], ["turn", 90], ["stop"],
+        ["pid", 90, 800, 15], ["turn", 30], ["pid", 20, 900, 40], ["stop"]
+      ]
+    },
+    {
+      id: "w7", title: "Weg 7 — Sachen in Kreis", sub: "Things into the circle",
+      desc: "Out, align, push things in with both arms, then a short reverse and a 27° exit.",
+      steps: [
+        ["pid", 0, -400, 2], ["pid", 0, 500, 29], ["turn1", 70], ["pid", 70, 200, 16],
+        ["stop"], ["modx", "l", 1000, 450], ["mod", "r", 500, -350], ["pid", 70, 200, 5],
+        ["stop"], ["mod", "r", 500, 250], ["pid", 70, -300, 25], ["stop"],
+        ["turn", 27], ["pid", 27, 500, 27], ["stop"]
+      ]
+    }
+  ];
+
+  function stepSentence(s) {
+    const kind = s[0];
+    switch (kind) {
+      case "pid":
+        return "Hold " + s[1] + "° while driving " + s[2] + " mm/s for " + s[3] +
+          " units (≈ " + (s[3] * WHEEL_MM / FORMULA_MM).toFixed(1) + " cm).";
+      case "turn":
+        return "Turn in place to " + s[1] + "° with ausrichten2 (gain 5).";
+      case "turn1":
+        return "Turn in place to " + s[1] + "° with ausrichten1 (gentler, gain 3).";
+      case "stop":
+        return "motors.stop() — brake. The move above was still rolling.";
+      case "mod":
+        return (s[1] === "l" ? "Left" : "Right") + " module: rotate " + s[3] + "° at " +
+          Math.abs(s[2]) + "°/s.";
+      case "modx":
+        return (s[1] === "l" ? "Left" : "Right") + " module: rotate " + s[3] +
+          "° at " + Math.abs(s[2]) + "°/s, without waiting (wait=False).";
+      case "stopmod":
+        return "Stop both module motors.";
+      case "wait":
+        return "Wait " + s[1] + " ms.";
+      case "spin":
+        return "Spin in place: both drive wheels at ±" + s[1] + "°/s for " + s[2] + " ms.";
+      case "curve1":
+        return "motors_kurve1: drive while rotating to " + s[1] + "°, steering " + s[3] +
+          " at " + s[2] + " mm/s.";
+      case "stall":
+        return (s[1] === "l" ? "Left" : "Right") + " module drives at " + Math.abs(s[2]) +
+          "°/s until it jams (duty limit 50 %).";
+      case "repeat4":
+        return "Four times: right module −150°, wait, +170°, wait. (A shake / ratchet motion.)";
+      default:
+        return "";
+    }
+  }
+
+  const mflow = $("mflow");
+  MISSIONS.forEach((m, i) => {
+    const gate = document.createElement("div");
+    gate.className = "gate";
+    gate.textContent = i === 0 ? "" : "press RIGHT · then LEFT";
+    if (i === 0) gate.style.display = "none";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mstep";
+    btn.style.setProperty("--c", ["var(--mag)", "var(--cy)", "var(--gr)", "var(--am)"][i % 4]);
+    btn.innerHTML =
+      '<span class="num">' + (i + 1) + '</span>' +
+      '<span class="t"><b>' + m.title + '</b><small>' + m.sub + '</small></span>' +
+      '<span class="go">▸</span>';
+    btn.addEventListener("click", () => showMission(m, btn, true));
+
+    mflow.appendChild(gate);
+    mflow.appendChild(btn);
+  });
+
+  function showMission(m, btn, doScroll) {
+    document.querySelectorAll(".mstep").forEach((b) => b.classList.remove("on"));
+    btn.classList.add("on");
+    $("msheet").classList.add("on");
+    $("mTitle").textContent = m.title;
+    $("mDesc").textContent = m.desc;
+    $("mCount").textContent = m.steps.length + " calls";
+    const box = $("mSteps");
+    box.innerHTML = "";
+    m.steps.forEach((s, i) => {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "mline";
+      el.innerHTML =
+        '<span class="i">' + String(i + 1).padStart(2, "0") + '</span>' +
+        '<span><code>' + prettyCall(s) + '</code><span class="say">' + stepSentence(s) + '</span></span>';
+      el.addEventListener("click", () => {
+        box.querySelectorAll(".mline").forEach((x) => x.classList.remove("sel"));
+        el.classList.add("sel");
+      });
+      box.appendChild(el);
+    });
+
+    const cm = m.steps
+      .filter((s) => s[0] === "pid")
+      .reduce((a, s) => a + Math.abs(s[3]), 0) * (WHEEL_MM / FORMULA_MM);
+    $("mTot").textContent =
+      "PID distance in this route: " + cm.toFixed(0) + " cm of driving (sum of every amount, converted).";
+    if (doScroll) $("msheet").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function prettyCall(s) {
+    switch (s[0]) {
+      case "pid": return "motors_pid(" + s[1] + ", " + s[2] + ", " + s[3] + ")";
+      case "turn": return "ausrichten2(" + s[1] + ")";
+      case "turn1": return "ausrichten1(" + s[1] + ")";
+      case "stop": return "motors.stop()";
+      case "mod": return "modul" + s[1] + ".run_angle(" + s[2] + ", " + s[3] + ")";
+      case "modx": return "modul" + s[1] + ".run_angle(" + s[2] + ", " + s[3] + ", wait=False)";
+      case "stopmod": return "modulr.stop() / modull.stop()";
+      case "wait": return "wait(" + s[1] + ")";
+      case "spin": return "links.run(" + (-s[1]) + ") / rechts.run(" + s[1] + ") for " + s[2] + " ms";
+      case "curve1": return "motors_kurve1(" + s[1] + ", " + s[2] + ", " + s[3] + ")";
+      case "stall": return "modul" + s[1] + ".run_until_stalled(" + s[2] + ", duty_limit=50)";
+      case "repeat4": return "for i in range(4): modulr.run_angle(850, -150) …";
+      default: return "";
+    }
+  }
+
+  // open the first mission by default so the section is not empty
+  setTimeout(() => {
+    const first = document.querySelector(".mstep");
+    if (first) showMission(MISSIONS[0], first, false);
+  }, 120);
+
+  /* ============================================================ resize */
+  let rt = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { drawSim(); drawChart(); drawGain(); }, 120);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Live index of the maintained subsystem notes in docs/Systems.
+filters:
+  and:
+    - file.inFolder("docs/Systems")
+views:
+  - type: table
+    name: Systems
+    order:
+      - file.name
+      - status
+      - updated
+      - tags
+    sort:
+      - property: note.updated
+        direction: DESC
+  - type: table
+    name: By status
+    groupBy:
+      property: note.status
+      direction: ASC
+    order:
+      - file.name
+      - updated
+      - tags
