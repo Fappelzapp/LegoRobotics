@@ -11,15 +11,15 @@ tags: [lego, spike, session, pybricks, bluetooth]
 
 ## Scope
 
-- Robot: hub advertising as **LegoLabSpike1**, address `EC:03:D9:E4:31:78` (random address).
+- Robot: hub advertising as **LegoLabSpike1**, address `<hub-bluetooth-address>` (random address).
 - Source: `src/main.py`, the placeholder "hello from the hub" program; `src/` unchanged.
 - Transport: **BLE**, `pybricksdev` 2.3.2 installed inside `.venv/`.
 - Changes allowed: yes — installing a local virtual environment and running the placeholder.
 
 ## Observations
 
-- The earlier `B0:B1:13:9B:90:E7` / **SPIKE Prime** device was no longer available. The device in
-  use was `LegoLabSpike1` at `EC:03:D9:E4:31:78`.
+- The earlier `<other-hub-bluetooth-address>` / **SPIKE Prime** device was no longer available. The device in
+  use was `LegoLabSpike1` at `<hub-bluetooth-address>`.
 - `bluetoothctl info` reported: **paired, bonded, trusted, connected**. Modalias
   `bluetooth:v0397p0081d0000` (LEGO vendor `0x0397`).
 - It exposes the **Nordic UART Service** (`6e400001-b5a3-f393-e0a9-e50e24dcca9e`), which PyBricks
@@ -38,7 +38,7 @@ tags: [lego, spike, session, pybricks, bluetooth]
 - Ran the placeholder successfully:
 
 ```sh
-bluetoothctl disconnect EC:03:D9:E4:31:78
+bluetoothctl disconnect <hub-bluetooth-address>
 .venv/bin/pybricksdev run ble --name "LegoLabSpike1" src/main.py
 ```
 

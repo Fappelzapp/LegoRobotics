@@ -18,7 +18,7 @@ tags: [lego, spike, session, vault]
 
 ## Observations
 
-- The vault opened at `/home/fabian/Documents/LegoRobotics` with `.obsidian/` and no notes.
+- The vault opened at `~/Documents/LegoRobotics` with `.obsidian/` and no notes.
 - Python 3.14.4 is available. `pyserial` is installed. `pybricksdev` is not installed.
 - No serial device (`/dev/ttyACM*`, `/dev/ttyUSB*`) was present and no LEGO/Nordic USB device
   was visible.

@@ -59,7 +59,7 @@ pybricksdev compile src/main.py
 ```sh
 # A hub that is already connected stops advertising, so pybricksdev cannot
 # find it. Drop the existing link first; pybricksdev reconnects on its own.
-bluetoothctl disconnect EC:03:D9:E4:31:78
+bluetoothctl disconnect <hub-bluetooth-address>
 
 .venv/bin/pybricksdev run ble --name "LegoLabSpike1" src/main.py
 ```

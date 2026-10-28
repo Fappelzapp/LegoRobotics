@@ -17,8 +17,8 @@ answers. Read this before measuring, tuning, or editing `src/`.
 | --- | --- | --- |
 | Team / robot name | **TODO** | not recorded yet |
 | Hub model | **TODO** — SPKI 6 (Prime), SPKI 7 (Inventor), or Essential | not recorded |
-| Robot Bluetooth name | **LegoLabSpike1**, address `EC:03:D9:E4:31:78` (random) | connected and used 2026-10-28 |
-| Other device seen | **SPIKE Prime**, `B0:B1:13:9B:90:E7` | BLE scan, not used |
+| Robot Bluetooth name | **LegoLabSpike1**, address `<hub-bluetooth-address>` (random) | connected and used 2026-10-28 |
+| Other device seen | **SPIKE Prime**, `<other-hub-bluetooth-address>` | BLE scan, not used |
 | Hub firmware | **PyBricks** — proved by a successful `pybricksdev` run and the Nordic UART Service | 2026-10-28 |
 | PyBricks version | **TODO** | read in Pybricks Code |
 | Event(s) | **TODO** | not recorded |
