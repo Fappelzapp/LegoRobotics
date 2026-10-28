@@ -17,6 +17,7 @@ class PIDTests(unittest.TestCase):
         pid = PID(kp=0.0, ki=1.0, i_limit=5.0)
         pid.update(10.0, 0.0, 0.1)  # integral = 1
         self.assertAlmostEqual(pid.update(10.0, 0.0, 0.1), 2.0)
+        output = 0.0
         for _ in range(100):
             output = pid.update(10.0, 0.0, 0.1)
         self.assertAlmostEqual(output, 5.0)

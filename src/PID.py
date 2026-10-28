@@ -1,3 +1,4 @@
+# pyright: reportOptionalMemberAccess=false
 """Team competition program, refactored from the user's 2026-10-28 paste.
 
 Run this file on the hub; importing it on a laptop does NOT initialise hardware
@@ -18,7 +19,7 @@ Hub validation: not run. Verify motor polarity with wheels raised first.
 
 from math import pi
 
-from lib import competition_config as config
+import lib.competition_config as config
 from lib.competition_motion import Motion
 
 hub = None
@@ -47,7 +48,7 @@ def setup_hardware():
     from pybricks.robotics import DriveBase
     from pybricks.tools import StopWatch, wait as hub_wait
 
-    hub_device = PrimeHub(top_side=Axis.Z, front_side=Axis.Y)
+    hub_device = PrimeHub(top_side=Axis.Z, front_side=Axis.Y)  # pyright: ignore[reportArgumentType]
     hub_device.light.on(Color.MAGENTA)
     hub_device.system.set_stop_button(Button.BLUETOOTH)
     left_direction = (Direction.COUNTERCLOCKWISE if config.GUESS_LEFT_FORWARD_IS_CCW

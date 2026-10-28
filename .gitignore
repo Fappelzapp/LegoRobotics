@@ -6,6 +6,19 @@ __pycache__/
 # Editor / OS
 .DS_Store
 
+# Secrets — never commit these
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets*
+*credentials*
+
+# Local-only README (not published)
+README.md
+
 # Obsidian per-window state (keep the rest of .obsidian/)
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json

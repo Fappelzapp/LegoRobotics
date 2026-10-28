@@ -1,14 +1,17 @@
+# pyright: reportOptionalMemberAccess=false
 """Offline tests of PID.py, shared motion loops, and the limited laptop model.
 
 No hub, transport, traction, or real motor behaviour is tested here.
 """
 
 import ast
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -268,6 +271,17 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(worlds[0].drive.distance(), worlds[1].drive.distance())
         self.assertAlmostEqual(worlds[1].x_mm, 0.8 * worlds[0].x_mm)
 
+    def test_shutdown_still_stops_modules_if_drive_disconnected(self):
+        world = Simulation()
+        world.connect(program)
+        world.left_module.run_angle(100, 200, wait=False)
+        world.right_module.run_angle(100, 200, wait=False)
+        with patch.object(world.drive, "brake", side_effect=OSError("drive disconnected")):
+            with self.assertRaises(OSError):
+                program.stop_all()
+        self.assertEqual(world.left_module.rate, 0)
+        self.assertEqual(world.right_module.rate, 0)
+
     def test_route5_refuses_to_invent_a_collision(self):
         world = Simulation()
         world.connect(program)
@@ -289,6 +303,78 @@ class SimulatorTests(unittest.TestCase):
                     self.assertTrue(any("stall is assumed" in text for text in world.assumptions))
 
 
+class RunnerTests(unittest.TestCase):
+    def run_export(self, *arguments):
+        from src.sim.run_pid import main
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "replay.html"
+            with redirect_stdout(io.StringIO()):
+                status = main(["--output", str(output), *arguments])
+            html = output.read_text()
+            marker = '<script id="simulation-data" type="application/json">'
+            payload = html.split(marker, 1)[1].split("</script>", 1)[0]
+            csv_text = output.with_suffix(".csv").read_text()
+            return status, html, json.loads(payload), csv_text
+
+    def test_exports_python_samples_and_csv_without_external_assets(self):
+        status, html, cases, csv_text = self.run_export()
+        self.assertEqual(status, 0)
+        self.assertEqual(cases[0]["name"], "demo")
+        self.assertIsNone(cases[0]["error"])
+        self.assertNotIn("__SAMPLES__", html)
+        self.assertNotIn("__CSV__", html)
+        self.assertNotIn('<script src=', html)
+        self.assertIn("case,time_s,x_mm,y_mm", csv_text)
+        self.assertGreater(len(cases[0]["samples"]), 100)
+
+    def test_sweep_does_not_change_hub_configuration(self):
+        before = (config.HEADING_KP, config.HEADING_KD)
+        status, _, cases, _ = self.run_export("--sweep")
+        self.assertEqual(status, 0)
+        self.assertEqual([case["settings"]["kp"] for case in cases], [0, 1, 4, 8])
+        self.assertEqual((config.HEADING_KP, config.HEADING_KD), before)
+
+    def test_unmodelled_stall_reports_failure_and_returns_nonzero(self):
+        status, _, cases, _ = self.run_export("--route", "5")
+        self.assertEqual(status, 1)
+        self.assertIn("NotImplementedError", cases[0]["error"])
+        self.assertTrue(cases[0]["samples"])
+
+    def test_rejects_nonfinite_cli_settings(self):
+        from src.sim.run_pid import main
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as result:
+            main(["--slip", "nan"])
+        self.assertEqual(result.exception.code, 2)
+
+    def test_micropython_bundle_contains_every_local_dependency_if_compiler_installed(self):
+        root = Path(__file__).resolve().parents[1]
+        compiler = root / ".venv/bin/pybricksdev"
+        if not compiler.exists():
+            self.skipTest("optional local pybricksdev compiler is not installed")
+        # Compilation is offline. Do not invoke `run`, USB or BLE in a test.
+        probe = """
+import asyncio
+from pybricksdev.compile import compile_multi_file
+blob = asyncio.run(compile_multi_file('src/PID.py', 6))
+offset = 0
+names = set()
+while offset < len(blob):
+    size = int.from_bytes(blob[offset:offset+4], 'little')
+    offset += 4
+    end = blob.index(b'\\0', offset)
+    names.add(blob[offset:end].decode())
+    offset = end + 1 + size
+required = {'__main__', 'lib.competition_config', 'lib.competition_motion', 'lib.geometry'}
+assert required <= names, sorted(required - names)
+assert not any(name.startswith('sim') or name.startswith('pybricks.') for name in names), names
+"""
+        result = subprocess.run(
+            [str(root / ".venv/bin/python"), "-c", probe], cwd=root,
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 # Preserve the mission *arguments* while deliberately changing their controller
 # implementation. Comparison is against the archived paste, not the old HTML.
 class _SourceCalls(ast.NodeVisitor):
@@ -299,6 +385,8 @@ class _SourceCalls(ast.NodeVisitor):
         return  # physical button gates and timed wheel loops are intentionally replaced
 
     def visit_For(self, node):
+        if not isinstance(node.iter, ast.Call):
+            raise TypeError("for-loop iterable is not a call")
         for _ in range(ast.literal_eval(node.iter.args[0])):
             for statement in node.body:
                 self.visit(statement)
@@ -329,8 +417,13 @@ class MissionPreservationTests(unittest.TestCase):
             bodies[route] = ast.parse(source[start:end]).body
         variant_source = source[source.index('if ausgewaehlter_weg == "links":'):source.index(markers[3])]
         branch = ast.parse(variant_source).body[0]
+        if not isinstance(branch, ast.If):
+            raise TypeError("route variant does not start with an if")
         bodies["3-left"] = branch.body
-        bodies["3-right"] = branch.orelse[0].body
+        else_branch = branch.orelse[0]
+        if not isinstance(else_branch, ast.If):
+            raise TypeError("route variant has no elif branch")
+        bodies["3-right"] = else_branch.body
 
         for route, body in bodies.items():
             with self.subTest(route=route):

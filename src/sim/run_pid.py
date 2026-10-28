@@ -1,3 +1,4 @@
+# pyright: reportOptionalMemberAccess=false
 """Run PID.py without a hub: python3 -m src.sim.run_pid --route demo.
 
 Exports actual Python simulation samples to a standalone HTML replay and CSV.
@@ -17,7 +18,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import PID as program
-from lib import competition_config as config
+import lib.competition_config as config
 from src.sim.competition import Simulation
 
 ROUTES = ("1", "2", "3-left", "3-right", "4", "5", "6", "7")

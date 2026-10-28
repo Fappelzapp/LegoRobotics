@@ -49,7 +49,7 @@ def main():
 
     motor_deg = DISTANCE_MM / (math.pi * WHEEL_DIAMETER_MM) * 360.0
 
-    print("target_mm={:.1f} target_motor_deg={:.1f}".format(DISTANCE_MM, motor_deg))
+    print(f"target_mm={DISTANCE_MM:.1f} target_motor_deg={motor_deg:.1f}")
 
     hub.imu.reset_heading(0)
     left.reset_angle(0)
@@ -64,14 +64,13 @@ def main():
             break
         wait(20)
 
-    left.stop(Stop.BRAKE)
-    right.stop(Stop.BRAKE)
+    left.brake()
+    right.brake()
     wait(200)
 
     print(
-        "left_deg={:.1f} right_deg={:.1f} heading_deg={:.1f}".format(
-            left.angle(), right.angle(), hub.imu.heading()
-        )
+        f"left_deg={left.angle():.1f} right_deg={right.angle():.1f} "
+        f"heading_deg={hub.imu.heading():.1f}"
     )
 
 

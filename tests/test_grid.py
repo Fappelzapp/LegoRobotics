@@ -17,6 +17,7 @@ class GridTests(unittest.TestCase):
         grid = Grid(10.0, 10, 10)
         path = grid.plan((0.0, 0.0), (50.0, 0.0))
         self.assertIsNotNone(path)
+        assert path is not None
         self.assertEqual(path[0], (0.0, 0.0))
         self.assertEqual(path[-1], (50.0, 0.0))
         self.assertEqual(len(path), 6)
@@ -27,6 +28,7 @@ class GridTests(unittest.TestCase):
         grid = Grid(10.0, 10, 10, blocked)
         path = grid.plan((0.0, 50.0), (40.0, 50.0))
         self.assertIsNotNone(path)
+        assert path is not None
         self.assertTrue(any(y == 90.0 for _, y in path))
         self.assertGreater(len(path), 5)
 
@@ -45,6 +47,7 @@ class GridTests(unittest.TestCase):
         grid = Grid(10.0, 5, 5, blocked)
         path = grid.plan((10.0, 10.0), (20.0, 20.0))
         self.assertIsNotNone(path)
+        assert path is not None
         self.assertGreater(len(path), 2)
 
     def test_rejects_bad_grid(self):
