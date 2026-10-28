@@ -38,7 +38,7 @@ it. This folder is both an Obsidian vault and a Python source tree.
 | --- | --- |
 | [[docs/Systems/Robot Overview\|Robot overview]] | Proposed; subsystem map and source layout |
 | [[docs/Systems/Drive Base\|Drive base]] | Proposed; geometry, motors, kinematics, calibration |
-| [[docs/Systems/Motion Control\|Motion control]] | Proposed; PID loops for distance, heading, and turns |
+| [[docs/Systems/Motion Control\|Motion control]] | Competition PID/turn loops implemented and checked offline; hub tuning and broader design still proposed |
 | [[docs/Systems/Odometry and Localization\|Odometry]] | Proposed; pose estimation from encoders + gyro |
 | [[docs/Systems/Connected Grid\|Connected grid]] | Proposed; field coordinates, waypoint graph, path planning |
 | [[docs/Systems/Line Following\|Line following]] | Proposed; colour-sensor PID for the line-run event |
@@ -50,10 +50,12 @@ it. This folder is both an Obsidian vault and a Python source tree.
 - [[docs/Reference/SPIKE Hardware|SPIKE hardware]] — hub, motors, sensors, ports, units.
 - [[docs/Reference/PyBricks API Cheatsheet|PyBricks API cheatsheet]] — the calls we actually use.
 - [[docs/Reference/Library API|Library API]] — what each module in `src/lib/` promises.
-- [[docs/Attachments/PID-Explainer|PID explainer (interactive HTML)]] — click-through simulator for `motors_pid()`, annotated source, distance arithmetic, and ten review checks. Opens in the browser; no hub needed.
+- [[docs/Attachments/PID-Simulation.html|PID Lab — actual Python simulation replay]] — path, heading error, virtual-time playback and CSV; calculated from `src/PID.py`, not a second JavaScript controller.
+- [[docs/Attachments/PID-Explainer.html|Original PID explainer (interactive HTML)]] — historical explanation of the pasted program; see its update banner and correction list before following old advice.
 
 ## Guides
 
+- [[docs/Guides/Laptop Simulation|Laptop simulation]] — run the actual PID/mission code offline, compare gains, inspect traces; researched simulator options and limits.
 - [[docs/Guides/PyBricks Workflow|PyBricks workflow]] — laptop → hub, and how to verify.
 - [[docs/Guides/Vault Conventions|Vault conventions]] — status, evidence, links, editing.
 - [[docs/Guides/Agent Logging|Agent logging]] — what counts as meaningful.

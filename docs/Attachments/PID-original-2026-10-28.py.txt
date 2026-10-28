@@ -1,4 +1,5 @@
-# Archive of the program pasted by the user on 2026-10-28.
+# Transcription of the program pasted by the user on 2026-10-28.
+# Whitespace/comments abridged; not a byte-for-byte original file.
 # Not imported or run. Kept for comparison/rollback before the requested refactor.
 from pybricks.hubs import PrimeHub
 from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor, ForceSensor

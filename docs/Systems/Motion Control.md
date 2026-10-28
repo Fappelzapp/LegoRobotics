@@ -19,12 +19,51 @@ Deep tuning reference: [[docs/Reference/PID Tuning]].
 
 ## Source and evidence
 
-- Source: `src/lib/motion.py`, `src/lib/pid.py` (scaffold)
-- Context: proposal; classical PID plus feedforward
-- Evidence: standard control theory, **not tuned on this robot**
-- Verified: not yet
+- Competition entry point: `src/PID.py`; controllers: `src/lib/competition_motion.py`;
+  settings: `src/lib/competition_config.py`.
+- Separate scaffold: `src/lib/pid.py`. The design discussion below is still a **proposal**,
+  not a claim that all the proposed distance/feedforward/settling loops are implemented.
+- Competition evidence: source inspection, offline tests, an assumed 2D model, and MicroPython
+  compile checks. **Not tuned or run on this robot.**
 
-## The three loops
+## Competition program — implemented, offline-checked only
+
+The user's original program was transcribed and refactored on 2026-10-28. The source
+transcription is `docs/Attachments/PID-original-2026-10-28.py.txt`. See
+[[docs/Guides/Laptop Simulation]] for executable commands, primary sources, assumptions, and
+corrections to earlier advice.
+
+| Helper | Implemented behaviour / units |
+| --- | --- |
+| `motors_pid(stp, speed, amount)` | Absolute heading in deg; signed body speed in mm/s; non-negative distance in **cm** at the legacy mission boundary. Internally uses signed `DriveBase.distance()` deltas in mm, without resetting heading. |
+| `ausrichten1/2(stp)` | Absolute heading, wrapped shortest-path error, 2° proposed tolerance, 100 ms proposed settling check, and timeout. |
+| `motors_kurve1(target, speed, steering)` | Heading target in deg, signed speed in mm/s, turn-rate magnitude in deg/s (not a steering percentage), with target-selected direction and a timeout. |
+| All three | `wait(20)` via shared configuration; `brake()` on normal/error exit. Heading PID uses measured `dt`, derivative on measurement, bounded integral/output, and conditional anti-windup. |
+
+**Behaviour migration, not a drop-in optimization:** the DriveBase call now uses
+`drive(speed, turn_rate)`. The inferred left motor direction is normalised so both drive motors
+have positive-forward coordinates. The 5.56 cm custom distance multiplier is removed. Every
+helper brakes even where source calls previously chained. The speed ramp is now acceleration /
+remaining-distance based. Route geometry, timing, and gains need new hardware validation.
+
+- Source constants retained: diameter 62.4 mm, track 106 mm, Kp=4, Ki=0 — **unmeasured**.
+- Kd=0.02 s is a derived nominal conversion of the source per-pass 1 at 20 ms, not a tuned gain.
+- New limits, tolerance, acceleration, timeout and settling values are labelled proposals in
+  configuration. Source turn gains are converted from motor to body angular-speed units.
+- Positive speed is forward; positive turn rate is clockwise, including during reverse travel.
+- `use_gyro(False)` selects the custom outer gyro heading loop. Native wheel/speed regulation
+  remains active; this is a velocity-control cascade, not two absolute heading targets competing.
+- Main requires fresh RIGHT then LEFT press/release pairs. Stage 3 selects one variant with two
+  presses of the same button. Button polling yields rather than busy-spinning.
+- `src/main.py` is intentionally unchanged; running it still runs hello world, not competition code.
+- Retained limitation: route 5's attachment `run_until_stalled` is blocking without a timeout.
+  The laptop model refuses to invent contact unless an explicit stall-time assumption is supplied.
+
+An offline preservation test compares every route's PID, turn, curve and attachment command
+arguments (including `wait=False`) with the source transcription. It does **not** establish that
+the new physical trajectories match the old ones.
+
+## The three loops (design reference; proposal)
 
 | Loop | Measurement | Target | Output |
 | --- | --- | --- | --- |

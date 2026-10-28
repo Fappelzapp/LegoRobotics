@@ -6,7 +6,7 @@ Units: millimetres, seconds, body degrees; clockwise heading / turn rate positiv
 
 from math import isfinite, sqrt
 
-from lib import competition_config as config
+import lib.competition_config as config
 from lib.geometry import wrap_deg
 
 

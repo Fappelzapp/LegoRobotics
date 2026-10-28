@@ -432,6 +432,7 @@ footer a{color:var(--tx2)}
 
 <!-- ================================================================ START -->
 <section id="start" class="hero">
+  <div class="callout" style="margin-bottom:24px"><span class="ico">!</span><p><b>2026-10-28 update — historical source explanation.</b> This page describes the original paste, not the refactored <code>src/PID.py</code>. Some earlier review claims need correction: the original integral already reset per call, and a heading PID does not return the robot to a position line. Do not use the old suggested robot tests as validated instructions. <a href="PID-Simulation.html"><b>Open the new PID Lab: replay of the actual Python code →</b></a> Current instructions and the full correction list: <code>docs/Guides/Laptop Simulation.md</code>. No hub test has been performed for this refactor.</p></div>
   <div class="eyebrow">Read me first</div>
   <h1>How your <span>PID</span> code works</h1>
   <p class="lede">Your robot drives forward but wants to point at a certain angle. A gyro measures the

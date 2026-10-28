@@ -15,7 +15,7 @@ behaviour. Mark an item done only with a real check; offline checks say so expli
 
 | # | Item | Why | Done when |
 | --- | --- | --- | --- |
-| 1 | Import the team's drive base code into `src/` | Everything else depends on it | Code lives in `src/`, imports cleanly under the offline stubs, `main.py` names it |
+| 1 | Validate and integrate the imported competition program | `src/PID.py` and shared motion loops now exist and pass offline checks; `main.py` is intentionally still hello world | Explicit entry-point choice, raised-wheel API/polarity check, measured short forward/reverse/turn tests, then mission revalidation; see [[docs/Guides/Laptop Simulation]] |
 | 2 | Record the port map and motor polarity | Wrong ports silently invert one side | [[docs/Guides/Agent Quickstart]] lists every port, motor direction, and sensor |
 | 3 | Measure wheel diameter and drive-base track width | Every distance and turn conversion depends on them | Both numbers recorded with method and units; see [[docs/Reference/Drive Optimization]] |
 | 4 | Confirm hub model and PyBricks version (firmware is already confirmed as PyBricks) | API differences matter | Model and version strings recorded |
