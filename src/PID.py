@@ -122,12 +122,17 @@ def timed_straight(motor_speed_dps, duration_ms):
 
 
 def stop_all():
-    if motors is not None:
-        motors.brake()
-    if modull is not None:
-        modull.stop()
-    if modulr is not None:
-        modulr.stop()
+    # A disconnected device must not prevent attempts to stop the other ones.
+    try:
+        if motors is not None:
+            motors.brake()
+    finally:
+        try:
+            if modull is not None:
+                modull.stop()
+        finally:
+            if modulr is not None:
+                modulr.stop()
 
 
 # Mission call arguments and attachment concurrency are from the source paste.
