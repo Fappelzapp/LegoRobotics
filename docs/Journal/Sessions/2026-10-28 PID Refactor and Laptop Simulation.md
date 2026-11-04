@@ -9,6 +9,12 @@ tags: [lego, spike, session, pid, simulation, research, offline]
 
 # 2026-10-28 PID Refactor and Laptop Simulation
 
+> **Superseded layout — 2026-11-04.** The two modules described here
+> (`src/lib/competition_config.py`, `src/lib/competition_motion.py`) were folded into a single
+> self-contained `src/PID.py`, because that is the only file uploaded to the hub. The claims
+> and evidence below are left as recorded; only the file paths are out of date. See
+> [[docs/Journal/Sessions/2026-11-04 Single-File PID]].
+
 ## Scope
 
 User requested: put the pasted competition program into `PID.py`; remove prints and dead code;

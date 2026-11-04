@@ -11,7 +11,7 @@ tags: [lego, spike, pybricks, pid, simulation, offline]
 ## Recommendation: run Python fast, replay the result in the browser
 
 **Use the local virtual-time runner for day-to-day changes.** It runs the actual
-`src/PID.py` mission functions and `src/lib/competition_motion.py` controllers. It does not
+`src/PID.py` file — missions *and* controllers, the same single file the hub uploads. It does not
 copy their maths into JavaScript. The browser only replays the resulting samples.
 
 **Evidence:** implemented and checked offline. **Hub validation: not run — no hub connected.**
@@ -29,8 +29,8 @@ python3 -m src.sim.run_pid
 xdg-open docs/Attachments/PID-Simulation.html
 ```
 
-Expected result: a dark **PID Lab** page. Choose a route, press **Play**, and drag the time slider.
-The demo starts 15° crooked, drives 50 cm, turns to 90°, then reverses 20 cm.
+Expected result: a dark **PID Lab** page. Press **Play**, and drag the time slider.
+The default demo starts 15° crooked, drives 50 cm, turns to 90°, then reverses 20 cm.
 The path, wrapped heading error, speed commands, encoder distance, and module angles share one
 virtual clock. The CSV link downloads the exact data plotted in the page.
 
@@ -39,17 +39,22 @@ Changing replay speed changes only the animation, not the simulated controller's
 
 ## Useful experiments
 
-### Replay a real route's code
+### Replay your own mission
 
 ```sh
-python3 -m src.sim.run_pid --route 1
+python3 -m src.sim.run_pid
 xdg-open docs/Attachments/PID-Simulation.html
 ```
 
-Routes: `1`, `2`, `3-left`, `3-right`, `4`, `5`, `6`, `7`.
-The physical button gates are skipped; the selected route's actual function runs.
-Each route starts independently at the local origin, with heading reset as in the program.
-This is not a stitched map of all routes on a competition mat.
+The runner executes `mission()` from `src/PID.py` — the same function the hub runs. Edit that
+function and rerun; there is nothing to keep in sync. The physical button gates are not
+simulated; the mission starts immediately at the local origin with heading reset, the same
+conditions `main()` establishes on the hub.
+
+> **2026-11-04:** the seven competition routes (`weg1`…`weg7`) were deleted from `src/PID.py`.
+> They belonged to a game field that is no longer used. The original paste is still preserved in
+> `docs/Attachments/PID-original-2026-10-28.py.txt`, and the generated route reports
+> (`PID-Routes-Simulation.*`) are now historical artefacts.
 
 ### Compare four Kp settings without editing robot configuration
 
@@ -77,22 +82,16 @@ These are **assumed disturbances**, not measurements:
   sensor without the real pose being correct.
 - `--turn-lag 0.2`: assume a 0.2 s turn-rate lag. More lag can expose overshoot.
 - `--speed-lag`: assumed forward-speed lag in seconds; default `0.08`.
-- `--start-heading`: demo's initial heading error in degrees; default `15`.
+- `--start-heading`: initial heading error in degrees; default `15`.
 
 Do not tune the real robot solely to make an assumed model's graph look pretty.
 
-### All routes, including the attachment stall
+### The old multi-route report is historical
 
-```sh
-python3 -m src.sim.run_pid --route all --assume-stall-ms 500 --output docs/Attachments/PID-Routes-Simulation.html
-xdg-open docs/Attachments/PID-Routes-Simulation.html
-```
-
-**Why the extra flag?** Route 5 calls `modull.run_until_stalled(...)`. A 2D model has no arm,
-wall, collision, load, or end stop. Without this flag the runner intentionally stops route 5
-with `NotImplementedError`, writes the partial trace, and exits nonzero.
-The flag explicitly assumes a stall after 500 ms; it is recorded in that route's report.
-It does **not** simulate a real stall or validate the arm.
+The `--route` and `--assume-stall-ms` options were removed on 2026-11-04 together with the seven
+missions. `docs/Attachments/PID-Routes-Simulation.html` and `.csv` were generated before that and
+no longer match the code. A `run_until_stalled` call in your own mission still has no contact
+model: the simulation raises `NotImplementedError` rather than inventing a stall.
 
 A Python/control exception also stops the model, appears in the report, and makes the command
 exit nonzero. An "offline run completed" label only means the code returned under this model.
@@ -202,18 +201,23 @@ custom loop; this is not an instruction to disable all internal motor regulation
    modules F/B clockwise. This is **not measured**.
 3. In a separate bounded smoke test, verify that positive drive speed moves both wheels forward,
    and positive turn rate means clockwise. Do not start a full mission to discover a sign error.
-4. On a clear mat, measure a slow 10 cm move and a small turn, then a reverse move. The source
-   62.4 mm / 106 mm constants are unmeasured. Do not try to tune away bad geometry.
-5. Recheck every route distance and timing. With this refactor `amount=21` requests **210 mm** of
-   encoder travel. Under a hypothetical 62.4 mm direct-drive wheel, the old 5.56 cm formula would
-   have counted about 235.7 mm instead. That arithmetic is not a physical measurement.
+4. On a clear mat, measure a slow 10 cm move and a small turn, then a reverse move. The
+   wheel diameter is now **measured at 49.5 mm** and the axle track at **80 mm** (user report,
+   2026-11-04). Do not try to tune gains to hide bad geometry.
+5. Re-measure your own mission distances and timings. `amount=21` requests **210 mm** of encoder
+   travel. Going from the old declared 62.4 mm to the measured 49.5 mm makes every commanded move
+   travel about **1.26x further** and run **1.26x faster** than it did before, so old numbers will
+   overshoot until they are re-measured. Turn gains scale by 0.79, because they are derived from
+   the same ratio. `timed_straight` is unaffected in real travel: the conversion and `DriveBase`
+   use the same diameter, so they cancel.
 6. Retune only after the API/sign/unit checks. Kp=4 and Ki=0 are retained from source;
    Kd=0.02 is a nominal 20 ms unit conversion of the old per-pass 1, **not** a tuned gain.
-7. Confirm the stall/end stop for route 5. Its retained hardware `run_until_stalled` command is
-   blocking and has no added timeout. The drive/alignment/curve timeouts do not bound that call.
+7. Bound any `run_until_stalled` call you write. It is blocking and has no timeout; the
+   drive/alignment/curve timeouts do not bound it.
 
-Use [[docs/Guides/PyBricks Workflow]] for transport. `src/PID.py` is the competition entry point;
-`src/main.py` remains the safe hello-world program. Do not add `src/sim` to a hub upload.
+Use [[docs/Guides/PyBricks Workflow]] for transport. `src/PID.py` is the only hub upload (the
+mission-free kit); `src/main.py` remains the safe hello-world program. Do not add `src/sim` to a
+hub upload.
 
 ### Check the local dependency bundle without uploading
 
@@ -222,16 +226,17 @@ Use [[docs/Guides/PyBricks Workflow]] for transport. `src/PID.py` is the competi
 .venv/bin/pybricksdev compile src/PID.py
 ```
 
-**Local observation — not yet reconciled with the older multi-file caveat in
-[[docs/Guides/PyBricks Workflow]].** Installed `pybricksdev` 2.3.2 uses
-`compile_multi_file` even for its `compile` command. The final `src/PID.py` bundle was parsed
-offline and contains `__main__`, `lib.competition_config`, `lib.competition_motion`, and
-`lib.geometry` (9325 bytes in this check), with no simulator or Pybricks stubs.
+`src/PID.py` is now **one self-contained file**: settings, `HeadingPID`, `Motion`, missions and
+button gating all live in it, and it imports nothing of ours (only `math`). The bundle therefore
+contains `__main__` and nothing else. The regression test now asserts exactly that, when the
+optional local compiler is installed.
 
-An initial `from lib import competition_config` import silently omitted that dependency from
-the bundle. Explicit dotted imports fixed it. A regression test checks bundle membership when
-the optional local compiler is installed. This check does **not** execute any hub API or prove
-compatibility with the installed firmware. No upload/run was performed.
+Historical note — the earlier multi-file layout: an initial `from lib import competition_config`
+import silently omitted that dependency from the bundle; explicit dotted imports fixed it. That
+whole class of problem is gone now that there is a single file, and it also avoids the open
+Pybricks bug where ~45–52 KB multi-module programs corrupt over Bluetooth (USB was unaffected).
+This check does **not** execute any hub API or prove compatibility with the installed firmware.
+No upload/run was performed.
 
 ## Related
 

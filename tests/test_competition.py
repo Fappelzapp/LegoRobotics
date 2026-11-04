@@ -4,28 +4,33 @@
 No hub, transport, traction, or real motor behaviour is tested here.
 """
 
-import ast
-from contextlib import redirect_stderr, redirect_stdout
-import io
+# ruff's import sorting is suppressed for this block on purpose: `from tests import
+# _path` must run before `import PID`, because it puts src/ on sys.path.
+import io  # noqa: I001
 import json
-from pathlib import Path
+import math
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
+# This import must run first: it puts src/ on sys.path for the imports below.
 from tests import _path  # noqa: F401
+
 import PID as program
-from lib import competition_config as config
-from lib.competition_motion import HeadingPID
-from lib.geometry import wrap_deg
+from PID import HeadingPID, wrap_deg
 from src.sim.competition import Simulation
+
+# Settings now live inside PID.py itself; keep the old `config.` spelling.
+config = program
 
 
 class HeadingControllerTests(unittest.TestCase):
     def make_pid(self, **overrides):
-        values = dict(kp=4, ki=0, kd=0.02, output_limit=180, integral_limit=30)
+        values = {"kp": 4, "ki": 0, "kd": 0.02, "output_limit": 180, "integral_limit": 30}
         values.update(overrides)
         return HeadingPID(**values)
 
@@ -162,9 +167,9 @@ class MotionTests(unittest.TestCase):
         self.assert_braked()
 
     def test_sensor_exception_brakes(self):
-        with patch.object(self.world.hub.imu, "heading", side_effect=OSError("sensor unavailable")):
-            with self.assertRaises(OSError):
-                program.motors_pid(0, 200, 10)
+        with patch.object(self.world.hub.imu, "heading", side_effect=OSError("sensor unavailable")), \
+                self.assertRaises(OSError):
+            program.motors_pid(0, 200, 10)
         self.assert_braked()
 
     def test_turn_goes_short_way_through_180(self):
@@ -182,9 +187,9 @@ class MotionTests(unittest.TestCase):
         self.assert_braked()
 
     def test_frozen_gyro_times_out_alignment(self):
-        with patch.object(self.world.hub.imu, "heading", return_value=0):
-            with self.assertRaisesRegex(RuntimeError, "alignment timed out"):
-                self.motion.align(45, config.TURN_FAST_KP, timeout_ms=100)
+        with patch.object(self.world.hub.imu, "heading", return_value=0), \
+                self.assertRaisesRegex(RuntimeError, "alignment timed out"):
+            self.motion.align(45, config.TURN_FAST_KP, timeout_ms=100)
         self.assert_braked()
 
     def test_curve_chooses_direction_and_handles_reverse(self):
@@ -201,15 +206,18 @@ class MotionTests(unittest.TestCase):
         self.assert_braked()
 
     def test_frozen_gyro_times_out_curve(self):
-        with patch.object(self.world.hub.imu, "heading", return_value=0):
-            with self.assertRaisesRegex(RuntimeError, "curve timed out"):
-                self.motion.curve(45, 100, 10, timeout_ms=100)
+        with patch.object(self.world.hub.imu, "heading", return_value=0), \
+                self.assertRaisesRegex(RuntimeError, "curve timed out"):
+            self.motion.curve(45, 100, 10, timeout_ms=100)
         self.assert_braked()
 
     def test_timed_raw_motor_move_is_converted_to_straight_travel(self):
         program.timed_straight(200, 1000)
         v, w = self.world.drive.commands[0]
-        self.assertAlmostEqual(v, 108.9085453244)
+        # Derived from the measured diameter rather than pinned, so a new wheel
+        # measurement does not look like a broken conversion.
+        expected = 200 * math.pi * program.WHEEL_DIAMETER_MM / 360.0
+        self.assertAlmostEqual(v, expected)
         self.assertEqual(w, 0)
         self.assert_braked()
 
@@ -218,9 +226,9 @@ class SimulatorTests(unittest.TestCase):
     def test_import_does_not_require_pybricks_or_initialise_hardware(self):
         root = Path(__file__).resolve().parents[1]
         result = subprocess.run(
-            [sys.executable, "-c", "import sys; sys.path.insert(0, 'src'); import PID; "
-             "assert PID.hub is None; assert 'pybricks' not in sys.modules"],
-            cwd=root, capture_output=True, text=True, timeout=5,
+            [sys.executable, "-c", ("import sys; sys.path.insert(0, 'src'); import PID; "
+                                    "assert PID.hub is None; assert 'pybricks' not in sys.modules")],
+            cwd=root, capture_output=True, text=True, timeout=5, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -276,31 +284,30 @@ class SimulatorTests(unittest.TestCase):
         world.connect(program)
         world.left_module.run_angle(100, 200, wait=False)
         world.right_module.run_angle(100, 200, wait=False)
-        with patch.object(world.drive, "brake", side_effect=OSError("drive disconnected")):
-            with self.assertRaises(OSError):
-                program.stop_all()
+        with patch.object(world.drive, "brake", side_effect=OSError("drive disconnected")), \
+                self.assertRaises(OSError):
+            program.stop_all()
         self.assertEqual(world.left_module.rate, 0)
         self.assertEqual(world.right_module.rate, 0)
 
-    def test_route5_refuses_to_invent_a_collision(self):
+    def test_mission_finishes_and_leaves_everything_stopped(self):
         world = Simulation()
         world.connect(program)
-        with self.assertRaises(NotImplementedError):
-            program.run_route("5")
+        program.mission()
         self.assertEqual(world.drive.speed_command, 0)
-        self.assertEqual(world.left_module.rate, 0)
-        self.assertEqual(world.right_module.rate, 0)
+        self.assertGreater(world.drive.brake_count, 0)
+        self.assertLess(world.time_ms, 60000)
 
-    def test_all_route_variants_finish_in_model_with_explicit_stall_assumption(self):
-        for route in ("1", "2", "3-left", "3-right", "4", "5", "6", "7"):
-            with self.subTest(route=route):
-                world = Simulation(assume_stall_ms=500)
-                world.connect(program)
-                program.run_route(route)
-                self.assertEqual(world.drive.speed_command, 0)
-                self.assertLess(world.time_ms, 60000)
-                if route == "5":
-                    self.assertTrue(any("stall is assumed" in text for text in world.assumptions))
+    def test_kit_defines_no_match_specific_route(self):
+        for name in ("weg1", "weg2", "weg3", "weg4", "weg5", "weg6", "weg7", "run_route"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(program, name))
+
+    def test_kit_exposes_the_documented_commands(self):
+        for name in ("motors_pid", "ausrichten1", "ausrichten2", "motors_kurve1",
+                     "timed_straight", "stop_all", "wait_for_start", "mission", "main"):
+            with self.subTest(name=name):
+                self.assertTrue(callable(getattr(program, name)))
 
 
 class RunnerTests(unittest.TestCase):
@@ -319,7 +326,7 @@ class RunnerTests(unittest.TestCase):
     def test_exports_python_samples_and_csv_without_external_assets(self):
         status, html, cases, csv_text = self.run_export()
         self.assertEqual(status, 0)
-        self.assertEqual(cases[0]["name"], "demo")
+        self.assertEqual(cases[0]["name"], "mission")
         self.assertIsNone(cases[0]["error"])
         self.assertNotIn("__SAMPLES__", html)
         self.assertNotIn("__CSV__", html)
@@ -333,12 +340,6 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual([case["settings"]["kp"] for case in cases], [0, 1, 4, 8])
         self.assertEqual((config.HEADING_KP, config.HEADING_KD), before)
-
-    def test_unmodelled_stall_reports_failure_and_returns_nonzero(self):
-        status, _, cases, _ = self.run_export("--route", "5")
-        self.assertEqual(status, 1)
-        self.assertIn("NotImplementedError", cases[0]["error"])
-        self.assertTrue(cases[0]["samples"])
 
     def test_rejects_nonfinite_cli_settings(self):
         from src.sim.run_pid import main
@@ -364,86 +365,15 @@ while offset < len(blob):
     end = blob.index(b'\\0', offset)
     names.add(blob[offset:end].decode())
     offset = end + 1 + size
-required = {'__main__', 'lib.competition_config', 'lib.competition_motion', 'lib.geometry'}
-assert required <= names, sorted(required - names)
+required = {'__main__'}
+assert names == required, sorted(names)
 assert not any(name.startswith('sim') or name.startswith('pybricks.') for name in names), names
 """
         result = subprocess.run(
             [str(root / ".venv/bin/python"), "-c", probe], cwd=root,
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=15, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-
-
-# Preserve the mission *arguments* while deliberately changing their controller
-# implementation. Comparison is against the archived paste, not the old HTML.
-class _SourceCalls(ast.NodeVisitor):
-    def __init__(self):
-        self.calls = []
-
-    def visit_While(self, node):
-        return  # physical button gates and timed wheel loops are intentionally replaced
-
-    def visit_For(self, node):
-        if not isinstance(node.iter, ast.Call):
-            raise TypeError("for-loop iterable is not a call")
-        for _ in range(ast.literal_eval(node.iter.args[0])):
-            for statement in node.body:
-                self.visit(statement)
-
-    def visit_Call(self, node):
-        name = ast.unparse(node.func)
-        if name in _MISSION_CALLS:
-            self.calls.append((name, tuple(ast.literal_eval(a) for a in node.args),
-                               {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}))
-
-
-_MISSION_CALLS = {"motors_pid", "ausrichten1", "ausrichten2", "motors_kurve1",
-                  "modull.run_angle", "modulr.run_angle", "modull.run_until_stalled"}
-
-
-class MissionPreservationTests(unittest.TestCase):
-    def test_all_motion_and_attachment_arguments_match_paste(self):
-        root = Path(__file__).resolve().parents[1]
-        source = (root / "docs/Attachments/PID-original-2026-10-28.py.txt").read_text()
-        source = source[source.index("# Weg 1 (Steine)"):]
-        markers = ["# Weg 1 (Steine)", "# Weg 2 (Umarmung)", "ausgewaehlter_weg = None",
-                   "# Weg 4 (Schwinger)", "# Weg 5 (schwarz)", "# Weg 6 (Lore zum anderen Team)",
-                   "# Weg 7 (Sachen in Kreis)"]
-        bodies = {}
-        for i, route in ((0, "1"), (1, "2"), (3, "4"), (4, "5"), (5, "6"), (6, "7")):
-            start = source.index(markers[i])
-            end = source.index(markers[i + 1]) if i + 1 < len(markers) else len(source)
-            bodies[route] = ast.parse(source[start:end]).body
-        variant_source = source[source.index('if ausgewaehlter_weg == "links":'):source.index(markers[3])]
-        branch = ast.parse(variant_source).body[0]
-        if not isinstance(branch, ast.If):
-            raise TypeError("route variant does not start with an if")
-        bodies["3-left"] = branch.body
-        else_branch = branch.orelse[0]
-        if not isinstance(else_branch, ast.If):
-            raise TypeError("route variant has no elif branch")
-        bodies["3-right"] = else_branch.body
-
-        for route, body in bodies.items():
-            with self.subTest(route=route):
-                expected = _SourceCalls()
-                for statement in body:
-                    expected.visit(statement)
-                world = Simulation(assume_stall_ms=500)
-                world.connect(program)
-                actual = []
-                def record(name):
-                    return lambda *args, **kwargs: actual.append((name, args, kwargs))
-                with patch.object(program, "motors_pid", record("motors_pid")), \
-                     patch.object(program, "ausrichten1", record("ausrichten1")), \
-                     patch.object(program, "ausrichten2", record("ausrichten2")), \
-                     patch.object(program, "motors_kurve1", record("motors_kurve1")), \
-                     patch.object(program.modull, "run_angle", record("modull.run_angle")), \
-                     patch.object(program.modulr, "run_angle", record("modulr.run_angle")), \
-                     patch.object(program.modull, "run_until_stalled", record("modull.run_until_stalled")):
-                    program.run_route(route)
-                self.assertEqual(actual, expected.calls)
 
 
 if __name__ == "__main__":

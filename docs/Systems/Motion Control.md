@@ -19,8 +19,10 @@ Deep tuning reference: [[docs/Reference/PID Tuning]].
 
 ## Source and evidence
 
-- Competition entry point: `src/PID.py`; controllers: `src/lib/competition_motion.py`;
-  settings: `src/lib/competition_config.py`.
+- The hub program and the reusable kit are the same file: `src/PID.py`. Self-contained (imports
+  only `math`), because that is the single file uploaded to the hub. It contains no mission for
+  any particular field: the settings block sits at the top, and a documented `mission()` at the
+  bottom is where the team writes its route. This is both the kit and the current program.
 - Separate scaffold: `src/lib/pid.py`. The design discussion below is still a **proposal**,
   not a claim that all the proposed distance/feedforward/settling loops are implemented.
 - Competition evidence: source inspection, offline tests, an assumed 2D model, and MicroPython
@@ -46,22 +48,26 @@ have positive-forward coordinates. The 5.56 cm custom distance multiplier is rem
 helper brakes even where source calls previously chained. The speed ramp is now acceleration /
 remaining-distance based. Route geometry, timing, and gains need new hardware validation.
 
-- Source constants retained: diameter 62.4 mm, track 106 mm, Kp=4, Ki=0 — **unmeasured**.
+- Source constants now measured: **wheel diameter 49.5 mm and axle track 80 mm, measured
+  2026-11-04** (were 62.4 mm / 106 mm from the paste). Kp=4, Ki=0 retained from source.
+  `MOTOR_TO_BODY_TURN` and all derived turn gains follow the measured geometry.
+  The two old errors largely cancelled for rotation (product 1.051 — turns were ~5% fast) but
+  not for translation, where only the diameter applies (moves were ~21% short).
 - Kd=0.02 s is a derived nominal conversion of the source per-pass 1 at 20 ms, not a tuned gain.
 - New limits, tolerance, acceleration, timeout and settling values are labelled proposals in
   configuration. Source turn gains are converted from motor to body angular-speed units.
 - Positive speed is forward; positive turn rate is clockwise, including during reverse travel.
 - `use_gyro(False)` selects the custom outer gyro heading loop. Native wheel/speed regulation
   remains active; this is a velocity-control cascade, not two absolute heading targets competing.
-- Main requires fresh RIGHT then LEFT press/release pairs. Stage 3 selects one variant with two
-  presses of the same button. Button polling yields rather than busy-spinning.
+- Main requires fresh RIGHT then LEFT press/release pairs. `wait_for_start()` in the kit does
+  the same for your own mission. Button polling yields rather than busy-spinning.
 - `src/main.py` is intentionally unchanged; running it still runs hello world, not competition code.
-- Retained limitation: route 5's attachment `run_until_stalled` is blocking without a timeout.
-  The laptop model refuses to invent contact unless an explicit stall-time assumption is supplied.
-
-An offline preservation test compares every route's PID, turn, curve and attachment command
-arguments (including `wait=False`) with the source transcription. It does **not** establish that
-the new physical trajectories match the old ones.
+- **2026-11-04: the seven competition missions were deleted.** They belonged to a retired game
+  field. `src/PID.py` is now a mission-free kit: settings, `HeadingPID`, `Motion`, hardware setup,
+  the mission-facing wrappers, and an empty `mission()` for the team to fill in. The archive
+  `docs/Attachments/PID-original-2026-10-28.py.txt` still holds the original paste.
+- Limitation that outlives the missions: `run_until_stalled` is blocking without a timeout, and
+  the laptop model refuses to invent contact. Bound any such call you write.
 
 ## The three loops (design reference; proposal)
 

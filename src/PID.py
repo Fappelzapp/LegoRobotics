@@ -1,26 +1,320 @@
 # pyright: reportOptionalMemberAccess=false
-"""Team competition program, refactored from the user's 2026-10-28 paste.
+"""PID - a one-file Pybricks kit for building your own missions.
 
-Run this file on the hub; importing it on a laptop does NOT initialise hardware
-or start missions. The laptop runner injects its own devices via configure().
+WHAT THIS IS
+  A reusable base for a two-wheel drivetrain with a gyro. It contains no
+  mission for any particular match: the bottom of this file is a blank page
+  for you to write in.
 
-IMPORTANT BEHAVIOUR CHANGES:
-- motors_pid(stp, speed, amount) keeps amount in CENTIMETRES; speed is now
-  conventional Pybricks mm/s (+forward), with no hidden sign flips.
-- distance comes from DriveBase.distance(), using the source 62.4 mm diameter.
-  Old 5.56 cm encoder calibration is NOT retained: routes need remeasurement.
-- every motion helper brakes on exit, including timeout/exception.
-- turn targets are absolute headings, resolved along the shortest path.
+WHY ONE FILE
+  Pybricks Code uploads one program. This file IS that program. It imports
+  nothing of ours, so there is no lib folder to copy and no second file to
+  forget.
 
-Unmeasured constants and proposed limits: lib/competition_config.py.
-Preserved source transcription: docs/Attachments/PID-original-2026-10-28.py.txt.
-Hub validation: not run. Verify motor polarity with wheels raised first.
+START A NEW PROJECT
+  1. Paste this whole file into a new Pybricks Code program and name it.
+  2. Edit the SETTINGS block. Ports and wheel diameter are the only must-dos.
+  3. Write your route inside mission() at the bottom.
+  4. Press Run. It starts immediately.
+  5. Wheels raised first: confirm forward and clockwise before trusting it.
+
+THE COMMANDS YOU WILL ACTUALLY USE
+  motors_pid(heading, speed, distance_cm)
+      Drive, holding a heading. speed is mm/s, positive = forward.
+      distance is centimetres.
+        motors_pid(0, 400, 50)      straight 50 cm, holding 0 deg
+        motors_pid(-90, -300, 20)   reverse 20 cm, holding -90 deg
+  ausrichten1(heading) / ausrichten2(heading)
+      Turn to an absolute heading by the shortest path. 1 = gentle, 2 = fast.
+  motors_kurve1(heading, speed, turn_rate)
+      Travel while turning, until the heading is reached.
+  timed_straight(motor_speed_dps, ms)
+      Drive straight for a fixed time. For "push until something happens".
+  stop_all()
+      Brake the wheels and stop both attachments. Also used on errors.
+
+UNITS - these are NOT interchangeable
+  heading            degrees, absolute, clockwise positive
+  speed              millimetres per second
+  distance           centimetres
+  turn_rate          body degrees per second, NOT a percentage
+  attachment angles  motor degrees
+
+ABOUT THE SETTINGS NUMBERS
+  "source"   copied from the team's competition paste - NOT measured
+  "proposal" an unverified guess: safe, but not tuned
+  Nothing here was tuned on a hub. Motor polarity is an inference, not an
+  observation. Verify with the wheels raised before a competition run.
 """
 
-from math import pi
+from math import isfinite, pi, sqrt
 
-import lib.competition_config as config
-from lib.competition_motion import Motion
+# =====================================================================
+# SETTINGS - edit here
+#
+# "source" values were copied from the competition paste; that is NOT the
+# same as measured. "proposal" values are unverified guesses that should be
+# checked on the robot. Nothing below was tuned on a hub.
+# =====================================================================
+
+WHEEL_DIAMETER_MM = 49.5  # MEASURED 2026-11-04 (user report). Was 62.4 (source, unmeasured).
+AXLE_TRACK_MM = 80.0  # MEASURED 2026-11-04 (user report). Was 106.0 (source, unmeasured).
+LEFT_PORT = "E"  # source: links
+RIGHT_PORT = "A"  # source: rechts
+LEFT_MODULE_PORT = "F"  # source: modull
+RIGHT_MODULE_PORT = "B"  # source: modulr
+
+# Inference from the original timed straight moves: links.run(-v), rechts.run(v).
+# Confirm with wheels raised BEFORE running a mission. Not a hardware observation.
+GUESS_LEFT_FORWARD_IS_CCW = True
+GUESS_RIGHT_FORWARD_IS_CCW = False
+
+LOOP_MS = 20  # user-requested wait; real dt includes work done between waits
+HEADING_KP = 4.0  # source gain, now outputs body turn rate in deg/s
+HEADING_KI = 0.0  # source: disabled
+# Source kd=1 multiplied a per-pass difference. At a nominal 20 ms, 1*0.020
+# gives equivalent continuous-time scaling (seconds). Derived, NOT retuned.
+HEADING_KD = 1.0 * LOOP_MS / 1000.0
+INTEGRAL_LIMIT_DEG_S = 30.0  # proposal: bounds accumulated error, not motor power
+MAX_TURN_RATE_DPS = 180.0  # proposal: safety cap; not a measured motor limit
+
+ACCELERATION_MM_S2 = 600.0  # proposal: replaces the iteration-count speed ramp
+DECELERATION_MM_S2 = 600.0  # proposal: stopping-distance envelope, not a guarantee
+MIN_DRIVE_SPEED_MM_S = 50.0  # source curve floor, proposed for straight moves too
+DISTANCE_TOLERANCE_MM = 1.0  # proposal: encoder-distance completion tolerance
+TURN_TOLERANCE_DEG = 2.0  # proposal: replaces exact integer equality
+TURN_SETTLE_MS = 100  # proposal: require several in-tolerance readings
+CURVE_TOLERANCE_DEG = 3.0  # source: motors_kurve1
+CURVE_SLOWDOWN_DEG = 10.0  # source: last 10 degrees
+
+# Source turn gains (motor deg/s per heading degree) converted to BODY deg/s
+# under the inferred direct-drive geometry. These are NOT the same unit as kp.
+MOTOR_TO_BODY_TURN = WHEEL_DIAMETER_MM / AXLE_TRACK_MM
+TURN_SLOW_KP = 3.0 * MOTOR_TO_BODY_TURN  # derived from ausrichten1
+TURN_FAST_KP = 5.0 * MOTOR_TO_BODY_TURN  # derived from ausrichten2
+MIN_TURN_RATE_DPS = 30.0 * MOTOR_TO_BODY_TURN  # source +/-30 motor-deg/s kick
+TURN_TIMEOUT_MS = 10000  # proposal: fail rather than spin indefinitely
+MOVE_TIMEOUT_MARGIN_MS = 3000  # proposal: allowances for acceleration / lag
+MOVE_TIMEOUT_FACTOR = 4.0  # proposal: multiple of nominal travel time
+IMU_READY_TIMEOUT_MS = 10000  # proposal: calibrate stationary before a mission
+
+MODULE_STALL_SPEED_DPS = 300  # source: modull.control.stall_tolerances
+MODULE_STALL_TIME_MS = 50  # source
+
+
+# =====================================================================
+# SMALL HELPERS
+# =====================================================================
+
+def wrap_deg(angle_deg):
+    """Normalise an angle to (-180, 180]."""
+    wrapped = angle_deg % 360.0
+    if wrapped > 180.0:
+        wrapped -= 360.0
+    return wrapped
+
+
+def clamp(value, limit):
+    return max(-limit, min(limit, value))
+
+
+def require_finite(value, name):
+    if not isfinite(value):
+        raise ValueError(name + " must be finite")
+    return value
+
+
+# =====================================================================
+# PID - the control loop
+# =====================================================================
+
+class HeadingPID:
+    """Wrapped heading error, derivative on measurement, bounded integral/output."""
+
+    def __init__(self, kp, ki, kd, output_limit, integral_limit):
+        for value in (kp, ki, kd, output_limit, integral_limit):
+            require_finite(value, "PID setting")
+        if output_limit <= 0 or integral_limit < 0:
+            raise ValueError("invalid PID limits")
+        self.kp, self.ki, self.kd = kp, ki, kd
+        self.output_limit = output_limit
+        self.integral_limit = integral_limit
+        self.reset()
+
+    def reset(self):
+        self.integral = 0.0
+        self.previous_heading = None
+
+    def update(self, target, heading, dt):
+        require_finite(target, "target")
+        require_finite(heading, "heading")
+        require_finite(dt, "dt")
+        if dt <= 0:
+            raise ValueError("dt must be positive")
+        error = wrap_deg(target - heading)
+        derivative = 0.0
+        if self.previous_heading is not None:
+            derivative = -wrap_deg(heading - self.previous_heading) / dt
+        self.previous_heading = heading
+
+        candidate = 0.0
+        if self.ki:
+            candidate = clamp(self.integral + error * dt, self.integral_limit)
+        raw = self.kp * error + self.ki * candidate + self.kd * derivative
+        output = clamp(raw, self.output_limit)
+        # Do not integrate further into saturation, but allow it to unwind.
+        if output == raw or error * raw <= 0:
+            self.integral = candidate
+        return output
+
+
+class Motion:
+    """Drive, align, and curve primitives. Works on a hub or in the laptop model."""
+
+    def __init__(self, imu, drive, wait, stopwatch):
+        self.imu = imu
+        self.drive = drive
+        self.wait = wait
+        self.stopwatch = stopwatch
+        self.target_heading_deg = None  # read-only telemetry for the laptop recorder
+        self.heading_pid = HeadingPID(
+            HEADING_KP, HEADING_KI, HEADING_KD, MAX_TURN_RATE_DPS, INTEGRAL_LIMIT_DEG_S,
+        )
+
+    def drive_heading(self, heading_deg, speed_mm_s, distance_cm, timeout_ms=None):
+        """Drive signed speed for a non-negative distance; brake on EVERY exit.
+
+        Mission arguments remain centimetres. Odometry and all internal maths
+        are millimetres. There is deliberately no encoder/gyro reset here: use a
+        distance baseline so adjacent moves do not change the heading reference.
+        """
+        try:
+            self.target_heading_deg = require_finite(heading_deg, "heading")
+            require_finite(speed_mm_s, "speed")
+            require_finite(distance_cm, "distance")
+            if distance_cm < 0:
+                raise ValueError("distance must be non-negative; reverse with speed < 0")
+            if distance_cm == 0:
+                return
+            if speed_mm_s == 0:
+                raise ValueError("nonzero distance needs nonzero speed")
+            direction = 1 if speed_mm_s > 0 else -1
+            requested = abs(speed_mm_s)
+            target_mm = distance_cm * 10.0
+            baseline = require_finite(self.drive.distance(), "odometry")
+            if timeout_ms is None:
+                timeout_ms = MOVE_TIMEOUT_MARGIN_MS + (
+                    MOVE_TIMEOUT_FACTOR * target_mm / requested * 1000.0
+                )
+            require_finite(timeout_ms, "timeout")
+            if timeout_ms <= 0:
+                raise ValueError("timeout must be positive")
+            timer = self.stopwatch()
+            previous_ms = -LOOP_MS
+            speed = 0.0
+            self.heading_pid.reset()
+
+            while True:
+                now_ms = timer.time()
+                travelled = direction * (
+                    require_finite(self.drive.distance(), "odometry") - baseline
+                )
+                remaining = target_mm - travelled
+                if remaining <= DISTANCE_TOLERANCE_MM:
+                    break
+                if now_ms >= timeout_ms:
+                    raise RuntimeError("heading move timed out; check encoders, polarity, or a blocked robot")
+                dt = (now_ms - previous_ms) / 1000.0
+                previous_ms = now_ms
+                turn_rate = self.heading_pid.update(heading_deg, self.imu.heading(), dt)
+                # v^2 = 2*a*d: taper requested speed before the endpoint. The
+                # floor avoids an asymptotic crawl; brake supplies the final stop.
+                braking_speed = sqrt(2.0 * DECELERATION_MM_S2 * max(remaining, 0.0))
+                speed = min(requested, speed + ACCELERATION_MM_S2 * dt, braking_speed)
+                speed = max(min(requested, MIN_DRIVE_SPEED_MM_S), speed)
+                # Pybricks: speed FIRST (mm/s), body turn rate SECOND (deg/s).
+                # Body heading correction does not flip when reversing.
+                self.drive.drive(direction * speed, turn_rate)
+                self.wait(LOOP_MS)
+        finally:
+            self.drive.brake()
+
+    def align(self, heading_deg, kp, timeout_ms=None):
+        """Shortest-path absolute turn, with tolerance, settling, and a timeout."""
+        try:
+            self.target_heading_deg = require_finite(heading_deg, "heading")
+            require_finite(kp, "turn gain")
+            if kp <= 0:
+                raise ValueError("turn gain must be positive")
+            if timeout_ms is None:
+                timeout_ms = TURN_TIMEOUT_MS
+            require_finite(timeout_ms, "timeout")
+            if timeout_ms <= 0:
+                raise ValueError("timeout must be positive")
+            timer = self.stopwatch()
+            settled_since = None
+            while True:
+                now_ms = timer.time()
+                error = wrap_deg(heading_deg - require_finite(self.imu.heading(), "heading"))
+                if abs(error) <= TURN_TOLERANCE_DEG:
+                    if settled_since is None:
+                        settled_since = now_ms
+                    if now_ms - settled_since >= TURN_SETTLE_MS:
+                        break
+                    turn_rate = 0.0
+                else:
+                    settled_since = None
+                    turn_rate = clamp(
+                        kp * error + (MIN_TURN_RATE_DPS if error > 0 else -MIN_TURN_RATE_DPS),
+                        MAX_TURN_RATE_DPS,
+                    )
+                if now_ms >= timeout_ms:
+                    raise RuntimeError("alignment timed out; gyro or turn direction needs checking")
+                self.drive.drive(0, turn_rate)
+                self.wait(LOOP_MS)
+        finally:
+            self.drive.brake()
+
+    def curve(self, heading_deg, speed_mm_s, turn_rate_dps, timeout_ms=None):
+        """Curve to an absolute heading. The target chooses the turning direction.
+
+        turn_rate_dps is a magnitude, NOT a steering percentage. Reverse changes
+        travel direction only. If the target is overshot, the turn reverses.
+        """
+        try:
+            for value in (heading_deg, speed_mm_s, turn_rate_dps):
+                require_finite(value, "curve argument")
+            self.target_heading_deg = heading_deg
+            if speed_mm_s == 0 or turn_rate_dps == 0:
+                raise ValueError("curve speed and turn rate must be nonzero")
+            rate_limit = min(abs(turn_rate_dps), MAX_TURN_RATE_DPS)
+            first_error = wrap_deg(heading_deg - self.imu.heading())
+            if timeout_ms is None:
+                timeout_ms = MOVE_TIMEOUT_MARGIN_MS + (
+                    MOVE_TIMEOUT_FACTOR * abs(first_error) / rate_limit * 1000.0
+                )
+            require_finite(timeout_ms, "timeout")
+            if timeout_ms <= 0:
+                raise ValueError("timeout must be positive")
+            timer = self.stopwatch()
+            direction = 1 if speed_mm_s > 0 else -1
+            while True:
+                error = wrap_deg(heading_deg - require_finite(self.imu.heading(), "heading"))
+                if abs(error) <= CURVE_TOLERANCE_DEG:
+                    break
+                if timer.time() >= timeout_ms:
+                    raise RuntimeError("curve timed out; check turn direction and gyro")
+                fraction = min(1.0, abs(error) / CURVE_SLOWDOWN_DEG)
+                speed = min(abs(speed_mm_s), max(MIN_DRIVE_SPEED_MM_S, fraction * abs(speed_mm_s)))
+                rate = rate_limit if error > 0 else -rate_limit
+                self.drive.drive(direction * speed, rate)
+                self.wait(LOOP_MS)
+        finally:
+            self.drive.brake()
+
+
+
+# =====================================================================
 
 hub = None
 motors = None
@@ -46,23 +340,22 @@ def setup_hardware():
     from pybricks.parameters import Axis, Button, Color, Direction, Port
     from pybricks.pupdevices import Motor
     from pybricks.robotics import DriveBase
-    from pybricks.tools import StopWatch, wait as hub_wait
+    from pybricks.tools import StopWatch
+    from pybricks.tools import wait as hub_wait
 
     hub_device = PrimeHub(top_side=Axis.Z, front_side=Axis.Y)  # pyright: ignore[reportArgumentType]
     hub_device.light.on(Color.MAGENTA)
     hub_device.system.set_stop_button(Button.BLUETOOTH)
-    left_direction = (Direction.COUNTERCLOCKWISE if config.GUESS_LEFT_FORWARD_IS_CCW
+    left_direction = (Direction.COUNTERCLOCKWISE if GUESS_LEFT_FORWARD_IS_CCW
                       else Direction.CLOCKWISE)
-    right_direction = (Direction.COUNTERCLOCKWISE if config.GUESS_RIGHT_FORWARD_IS_CCW
+    right_direction = (Direction.COUNTERCLOCKWISE if GUESS_RIGHT_FORWARD_IS_CCW
                        else Direction.CLOCKWISE)
-    left = Motor(getattr(Port, config.LEFT_PORT), left_direction)
-    right = Motor(getattr(Port, config.RIGHT_PORT), right_direction)
-    left_attachment = Motor(getattr(Port, config.LEFT_MODULE_PORT), Direction.CLOCKWISE)
-    right_attachment = Motor(getattr(Port, config.RIGHT_MODULE_PORT), Direction.CLOCKWISE)
-    left_attachment.control.stall_tolerances(
-        config.MODULE_STALL_SPEED_DPS, config.MODULE_STALL_TIME_MS,
-    )
-    drive = DriveBase(left, right, config.WHEEL_DIAMETER_MM, config.AXLE_TRACK_MM)
+    left = Motor(getattr(Port, LEFT_PORT), left_direction)
+    right = Motor(getattr(Port, RIGHT_PORT), right_direction)
+    left_attachment = Motor(getattr(Port, LEFT_MODULE_PORT), Direction.CLOCKWISE)
+    right_attachment = Motor(getattr(Port, RIGHT_MODULE_PORT), Direction.CLOCKWISE)
+    left_attachment.control.stall_tolerances(MODULE_STALL_SPEED_DPS, MODULE_STALL_TIME_MS)
+    drive = DriveBase(left, right, WHEEL_DIAMETER_MM, AXLE_TRACK_MM)
     # The custom outer loop owns gyro heading. DriveBase still controls wheel
     # speed internally; we are NOT trying to disable those motor-speed loops.
     drive.use_gyro(False)
@@ -70,9 +363,9 @@ def setup_hardware():
     timer = StopWatch()
     try:
         while not hub.imu.ready():
-            if timer.time() >= config.IMU_READY_TIMEOUT_MS:
+            if timer.time() >= IMU_READY_TIMEOUT_MS:
                 raise RuntimeError("IMU not ready; place the robot flat and stationary")
-            wait(config.LOOP_MS)
+            wait(LOOP_MS)
         hub.imu.reset_heading(0)
     except BaseException:
         stop_all()
@@ -85,6 +378,8 @@ def wait(time_ms):
     _wait(time_ms)
 
 
+# =====================================================================
+
 def motors_pid(stp, speed, amount):
     """Hold heading stp (deg); signed speed (mm/s); distance amount (cm)."""
     if _motion is None:
@@ -94,12 +389,12 @@ def motors_pid(stp, speed, amount):
 
 def ausrichten1(stp):
     """Gentler shortest-path turn to absolute heading stp (deg)."""
-    _motion.align(stp, config.TURN_SLOW_KP)
+    _motion.align(stp, TURN_SLOW_KP)
 
 
 def ausrichten2(stp):
     """Faster shortest-path turn to absolute heading stp (deg)."""
-    _motion.align(stp, config.TURN_FAST_KP)
+    _motion.align(stp, TURN_FAST_KP)
 
 
 def motors_kurve1(target_angle, speed, steering):
@@ -114,7 +409,7 @@ def timed_straight(motor_speed_dps, duration_ms):
     After normalising motor directions, one DriveBase command drives both sides.
     Conversion assumes the source direct drive (no unreported gearing).
     """
-    speed_mm_s = motor_speed_dps * pi * config.WHEEL_DIAMETER_MM / 360.0
+    speed_mm_s = motor_speed_dps * pi * WHEEL_DIAMETER_MM / 360.0
     try:
         motors.drive(speed_mm_s, 0)
         wait(duration_ms)
@@ -136,249 +431,40 @@ def stop_all():
                 modulr.stop()
 
 
-# Mission call arguments and attachment concurrency are from the source paste.
-# Explicit brake calls remain for readability even though helpers also brake.
-
-def weg1():
-    """Steine."""
-    motors_pid(0, -400, 2)
-    motors_pid(0, 500, 21)
-    ausrichten2(-30)
-    motors_pid(-30, 500, 30)
-    ausrichten2(35)
-    motors_pid(35, 500, 8)
-    motors.brake()
-    motors_kurve1(45, 100, 10)
-    timed_straight(200, 1000)
-    modulr.run_angle(500, 520)
-    modull.run_angle(400, -200, wait=False)
-    wait(1000)
-    modulr.run_angle(500, -520)
-    motors_pid(45, -200, 12)
-    motors.brake()
-    ausrichten2(27)
-    motors_pid(27, -700, 2)
-    ausrichten2(-25)
-    motors_pid(-25, -900, 55)
-    motors.brake()
+# =====================================================================
 
 
-def weg2():
-    """Umarmung."""
-    motors_pid(0, -400, 2)
-    motors_pid(0, 400, 4)
-    ausrichten2(-45)
-    motors_pid(-45, 500, 30)
-    motors_pid(-45, 300, 10)
-    motors.brake()
-    modulr.run_angle(600, 1000, wait=False)
-    modull.run_angle(-600, 1100)
-    wait(100)
-    modulr.run_angle(600, -200, wait=False)
-    modull.run_angle(800, 1100)
-    modulr.stop()
-    modull.stop()
-    motors_pid(-45, -400, 15)
-    ausrichten2(-65)
-    motors_pid(-65, -900, 30)
-    motors.brake()
-
-
-def weg3(extra_module):
-    """The shared route; LEFT adds the attachment sequence, RIGHT skips it."""
-    motors_pid(0, -400, 2)
-    motors_pid(0, 400, 37.5)
-    motors.brake()
-    for _ in range(4):
-        modulr.run_angle(850, -150)
-        wait(100)
-        modulr.run_angle(850, 170)
-        wait(100)
-    ausrichten2(0)
-    motors_pid(0, 400, 13.5)
-    motors.brake()
-    ausrichten2(-40)
-    motors_pid(-40, 400, 14)
-    ausrichten2(-90)
-    motors_pid(-90, 400, 22)
-    motors.brake()
-    wait(500)
-    ausrichten1(0)
-    motors_pid(0, 150, 10)
-    motors.brake()
-    if extra_module:
-        modull.run_angle(100, 600)
-        motors_pid(0, -400, 15)
-        motors.brake()
-        modull.run_angle(200, -600, wait=False)
-        wait(700)
-        motors_pid(0, 200, 15)
-        wait(300)
-    else:
-        wait(500)
-    motors_pid(0, -500, 5)
-    motors.brake()
-    wait(200)
-    ausrichten1(-90)
-    motors_pid(-90, 700, 13)
-    motors.brake()
-    wait(200)
-    ausrichten2(-150)
-    motors_pid(-150, 700, 27.5)
-    ausrichten2(-105)
-    motors_pid(-105, 900, 60)
-    motors.brake()
-
-
-def weg4():
-    """Schwinger."""
-    motors_pid(0, -400, 27)
-    modull.run_angle(-900, 450, wait=False)
-    ausrichten2(35)
-    motors_pid(35, -400, 21)
-    ausrichten2(90)
-    motors_pid(90, 400, 20)
-    motors.brake()
-    modulr.run_angle(400, 380)
-    modull.run_angle(900, 600, wait=False)
-    modulr.run_angle(400, -500)
-    modull.run_angle(-900, 500)
-    modulr.run_angle(400, -350, wait=False)
-    motors_pid(90, -400, 14.5)
-    ausrichten2(20)
-    motors_pid(20, 800, 45)
-    motors.brake()
-
-
-def weg5():
-    """Schwarz. The stall command requires a real mechanical end stop."""
-    motors_pid(5, 400, 45)
-    motors.brake()
-    modull.run_until_stalled(-600, duty_limit=50)
-    motors_pid(2, 500, 4)
-    motors.brake()
-    modulr.run_angle(-800, 900, wait=False)
-    timed_straight(100, 1000)
-    modull.run_angle(800, 860)
-    motors_pid(5, -500, 55)
-    motors.brake()
-
-
-def weg6():
-    """Lore zum anderen Team."""
-    motors_pid(0, 400, 2)
-    motors_pid(0, -600, 43)
-    ausrichten2(90)
-    motors_pid(90, -600, 23.5)
-    ausrichten2(180)
-    motors_pid(180, -600, 5.25)
-    motors.brake()
-    modulr.run_angle(400, -200)
-    motors_pid(180, 300, 6)
-    motors.brake()
-    modulr.run_angle(200, 140)
-    motors_pid(180, 250, 20)
-    motors.brake()
-    modull.run_angle(1200, -1000)
-    wait(200)
-    modull.run_angle(500, 400)
-    modull.run_angle(1200, -400)
-    wait(200)
-    modull.run_angle(500, 800)
-    motors_pid(180, -600, 3)
-    modulr.run_angle(150, -200, wait=False)
-    ausrichten2(90)
-    motors.brake()
-    motors_pid(90, 800, 15)
-    ausrichten2(30)
-    # Source says 30 above, but 20 here. Retained, NOT silently 'corrected'.
-    motors_pid(20, 900, 40)
-    motors.brake()
-
-
-def weg7():
-    """Sachen in Kreis."""
-    motors_pid(0, -400, 2)
-    motors_pid(0, 500, 29)
-    ausrichten1(70)
-    motors_pid(70, 200, 16)
-    motors.brake()
-    modull.run_angle(1000, 450, wait=False)
-    modulr.run_angle(500, -350)
-    motors_pid(70, 200, 5)
-    motors.brake()
-    modulr.run_angle(500, 250)
-    motors_pid(70, -300, 25)
-    motors.brake()
-    ausrichten2(27)
-    motors_pid(27, 500, 27)
-    motors.brake()
-
-
-def run_route(name):
-    """Run one route without a button gate (also used by the laptop runner)."""
-    if _motion is None:
-        raise RuntimeError("call setup_hardware() or configure() first")
-    routes = {"1": weg1, "2": weg2, "4": weg4, "5": weg5, "6": weg6, "7": weg7}
-    if name not in routes and name not in ("3-left", "3-right"):
-        raise ValueError("unknown route: " + str(name))
-    motors.brake()
-    hub.imu.reset_heading(0)
-    hub.speaker.beep(100)
-    try:
-        if name in ("3-left", "3-right"):
-            weg3(name == "3-left")
-        else:
-            routes[name]()
-    except BaseException:
-        stop_all()
-        raise
-    finally:
-        motors.brake()
-
-
-def _wait_for_press(button):
-    # Require a fresh press, then release. No CPU-burning `pass` loops.
-    while button in hub.buttons.pressed():
-        wait(config.LOOP_MS)
-    while button not in hub.buttons.pressed():
-        wait(config.LOOP_MS)
-    while button in hub.buttons.pressed():
-        wait(config.LOOP_MS)
-
-
-def _wait_for_route_start():
+def wait_for_start():
+    """Block until the user presses RIGHT, then LEFT. Fresh presses only."""
     from pybricks.parameters import Button
     motors.brake()
-    _wait_for_press(Button.RIGHT)
-    _wait_for_press(Button.LEFT)
+    for button in (Button.RIGHT, Button.LEFT):
+        while button in hub.buttons.pressed():
+            wait(LOOP_MS)
+        while button not in hub.buttons.pressed():
+            wait(LOOP_MS)
+        while button in hub.buttons.pressed():
+            wait(LOOP_MS)
 
 
-def _select_variant():
-    from pybricks.parameters import Button
-    while Button.LEFT in hub.buttons.pressed() or Button.RIGHT in hub.buttons.pressed():
-        wait(config.LOOP_MS)
-    while True:
-        pressed = hub.buttons.pressed()
-        selected = Button.LEFT if Button.LEFT in pressed else Button.RIGHT if Button.RIGHT in pressed else None
-        if selected is not None:
-            while selected in hub.buttons.pressed():
-                wait(config.LOOP_MS)
-            _wait_for_press(selected)
-            return "3-left" if selected == Button.LEFT else "3-right"
-        wait(config.LOOP_MS)
+def demo():
+    """A working example to copy from: straight, turn, straight, reverse."""
+    motors_pid(0, 300, 20)      # straight 20 cm, holding heading 0
+    ausrichten2(90)            # fast turn to heading 90 (shortest path)
+    motors_pid(90, 300, 20)    # straight 20 cm, holding heading 90
+    motors_pid(90, -200, 20)   # reverse 20 cm, still holding heading 90
+    stop_all()
+
+
+def mission():
+    """Replace this body with your own route. Add more functions if you like."""
+    demo()
 
 
 def main():
     setup_hardware()
     try:
-        for name in ("1", "2"):
-            _wait_for_route_start()
-            run_route(name)
-        run_route(_select_variant())
-        for name in ("4", "5", "6", "7"):
-            _wait_for_route_start()
-            run_route(name)
+        mission()
     finally:
         stop_all()
 

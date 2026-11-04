@@ -1,16 +1,17 @@
 # pyright: reportOptionalMemberAccess=false
-"""Run PID.py without a hub: python3 -m src.sim.run_pid --route demo.
+"""Run src/PID.py without a hub: python3 -m src.sim.run_pid.
 
-Exports actual Python simulation samples to a standalone HTML replay and CSV.
-The browser REPLAYS data; it does not implement a second copy of the PID law.
+Executes the mission() in src/PID.py under the laptop model and exports the samples to a
+standalone HTML replay and CSV. The browser REPLAYS data; it does not implement a second copy
+of the PID law.
 """
 
 import argparse
 import csv
 import json
+import sys
 from math import isfinite
 from pathlib import Path
-import sys
 from time import perf_counter
 
 _SRC = Path(__file__).resolve().parents[1]
@@ -18,18 +19,15 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import PID as program
-import lib.competition_config as config
 from src.sim.competition import Simulation
 
-ROUTES = ("1", "2", "3-left", "3-right", "4", "5", "6", "7")
 
-
-def run_case(name, args, kp=None):
+def run_case(args, kp=None):
+    """Run this file's mission() under the laptop model."""
     world = Simulation(
-        heading_deg=args.start_heading if name == "demo" else 0,
+        heading_deg=args.start_heading,
         turn_lag_s=args.turn_lag, speed_lag_s=args.speed_lag,
         drift_dps=args.gyro_drift, slip_fraction=args.slip,
-        assume_stall_ms=args.assume_stall_ms,
     )
     world.connect(program)
     world.motion.heading_pid.kp = args.kp if kp is None else kp
@@ -37,26 +35,21 @@ def run_case(name, args, kp=None):
     error = None
     started = perf_counter()
     try:
-        if name == "demo":
-            program.motors_pid(0, 300, 50)
-            program.ausrichten2(90)
-            program.motors_pid(90, -200, 20)
-        else:
-            program.run_route(name)
-    except Exception as exc:
+        program.mission()
+    except Exception as exc:  # noqa: BLE001 - report any mission failure, do not crash the report
         error = type(exc).__name__ + ": " + str(exc)
     finally:
         program.stop_all()
     elapsed = perf_counter() - started
     return {
-        "name": name if kp is None else "demo / Kp=" + str(kp),
+        "name": "mission" if kp is None else "mission / Kp=" + str(kp),
         "error": error, "wall_s": elapsed, "virtual_s": world.time_ms / 1000.0,
         "assumptions": sorted(world.assumptions),
         "settings": {
             "kp": world.motion.heading_pid.kp, "ki": world.motion.heading_pid.ki,
             "kd_seconds": world.motion.heading_pid.kd,
-            "loop_ms": config.LOOP_MS, "diameter_mm": config.WHEEL_DIAMETER_MM,
-            "track_mm": config.AXLE_TRACK_MM, "turn_lag_s": args.turn_lag,
+            "loop_ms": program.LOOP_MS, "diameter_mm": program.WHEEL_DIAMETER_MM,
+            "track_mm": program.AXLE_TRACK_MM, "turn_lag_s": args.turn_lag,
             "speed_lag_s": args.speed_lag, "gyro_drift_dps": args.gyro_drift,
             "slip_fraction": args.slip,
         },
@@ -96,7 +89,7 @@ REPORT = r'''<!doctype html>
 <div class="box notice"><b>Simulation is not a robot test.</b> No hub was contacted. Geometry, motor polarity and lag are unverified. No mat collisions, forces, battery or accurate braking model. Each route starts independently at the local origin.</div>
 <div class="box">
 <h2>Start here — three steps</h2>
-<ol><li>Choose a <b>route</b> below. <b>demo</b> drives crooked, corrects heading, turns to 90°, and reverses.</li><li>Press <b>Play</b>. The pink path and error plot use the same clock.</li><li>Drag the time slider to inspect one instant. Change Python/config settings and rerun the terminal command to calculate a new simulation.</li></ol>
+<ol><li>This replay runs <code>mission()</code> from <code>src/PID.py</code>. The default <b>demo</b> drives crooked, corrects heading, turns to 90°, and reverses.</li><li>Press <b>Play</b>. The pink path and error plot use the same clock.</li><li>Drag the time slider to inspect one instant. Change Python/config settings and rerun the terminal command to calculate a new simulation.</li></ol>
 <div class="toolbar"><label for="case">Route</label><select id="case"></select><button class="primary" id="play" type="button">▶ Play</button><button id="step" type="button">Step +20 ms</button><button id="reset" type="button">Reset replay</button><label for="rate">Replay speed</label><select id="rate"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="4">4×</option><option value="10">10×</option></select></div>
 <label for="time" class="muted" style="display:block;margin-top:14px">Replay time: <output id="clock">0.00 s</output></label><input id="time" type="range" min="0" max="1" step="0.02" value="0">
 </div>
@@ -135,42 +128,32 @@ selector.addEventListener('change',selectCase);byId('play').addEventListener('cl
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--route", choices=("demo", "all") + ROUTES, default="demo")
     parser.add_argument("--output", type=Path, default=Path("docs/Attachments/PID-Simulation.html"))
-    parser.add_argument("--start-heading", type=float, default=15.0, help="demo's initial heading error, deg")
-    parser.add_argument("--kp", type=float, default=config.HEADING_KP, help="simulation-only Kp override")
-    parser.add_argument("--kd", type=float, default=config.HEADING_KD, help="simulation-only time-based Kd, seconds")
+    parser.add_argument("--start-heading", type=float, default=15.0, help="initial heading error, deg")
+    parser.add_argument("--kp", type=float, default=program.HEADING_KP, help="simulation-only Kp override")
+    parser.add_argument("--kd", type=float, default=program.HEADING_KD, help="simulation-only time-based Kd, seconds")
     parser.add_argument("--turn-lag", type=float, default=0.12, help="assumed turn lag, seconds")
     parser.add_argument("--speed-lag", type=float, default=0.08, help="assumed speed lag, seconds")
     parser.add_argument("--gyro-drift", type=float, default=0.0, help="assumed gyro bias drift, deg/s")
     parser.add_argument("--slip", type=float, default=0.0, help="fraction of encoder travel lost at the floor (0..1)")
-    parser.add_argument("--assume-stall-ms", type=float, help="explicit timing assumption for route 5; no contact model")
-    parser.add_argument("--sweep", action="store_true", help="demo at Kp=0,1,4,8; source settings are not edited")
+    parser.add_argument("--sweep", action="store_true", help="run at Kp=0,1,4,8; source settings are not edited")
     args = parser.parse_args(argv)
     for name in ("start_heading", "kp", "kd", "turn_lag", "speed_lag", "gyro_drift", "slip"):
         if not isfinite(getattr(args, name)):
             parser.error(name + " must be finite")
     if args.turn_lag < 0 or args.speed_lag < 0 or not 0 <= args.slip <= 1:
         parser.error("lags must be non-negative and slip must be between 0 and 1")
-    if args.assume_stall_ms is not None and (
-        not isfinite(args.assume_stall_ms) or args.assume_stall_ms <= 0
-    ):
-        parser.error("assumed stall time must be finite and positive")
-    if args.sweep and args.route != "demo":
-        parser.error("--sweep is only for --route demo")
     if args.output.suffix.lower() != ".html":
         parser.error("--output must end in .html")
     if args.sweep:
-        cases = [run_case("demo", args, kp=kp) for kp in (0.0, 1.0, 4.0, 8.0)]
+        cases = [run_case(args, kp=kp) for kp in (0.0, 1.0, 4.0, 8.0)]
     else:
-        names = ROUTES if args.route == "all" else (args.route,)
-        cases = [run_case(name, args) for name in names]
+        cases = [run_case(args)]
     csv_path = write_outputs(cases, args.output)
     for case in cases:
         status = "STOPPED: " + case["error"] if case["error"] else "offline model completed"
-        print("%s: %.2f virtual seconds in %.4f wall seconds — %s" % (
-            case["name"], case["virtual_s"], case["wall_s"], status,
-        ))
+        print(f"{case['name']}: {case['virtual_s']:.2f} virtual seconds in "
+              f"{case['wall_s']:.4f} wall seconds — {status}")
     print("HTML replay:", args.output.resolve())
     print("CSV samples:", csv_path.resolve())
     print("Hub validation: not run — no hub connected. Model assumptions are in the report.")
