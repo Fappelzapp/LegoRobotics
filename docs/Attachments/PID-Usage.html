@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PID-Kit · Nutzung</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--card:#1d212b;--border:#2a2f3a;--fg:#e6e8ec;--muted:#9aa3af;--acc:#e040fb;--acc2:#39d0c8;--code:#0c0e12}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,Segoe UI,Roboto,Arial;letter-spacing:.1px}
+  .wrap{max-width:880px;margin:0 auto;padding:32px 22px 64px}
+  header h1{margin:0;font-size:30px;font-weight:700;letter-spacing:-.5px}
+  header p{color:var(--muted);margin:6px 0 0;font-size:14px}
+  .tag{display:inline-block;margin:14px 0 0;padding:4px 10px;border-radius:999px;background:rgba(224,64,251,.12);color:var(--acc);font-size:12px;font-weight:600}
+  h2{margin:30px 0 10px;font-size:19px}
+  h3{margin:16px 0 6px;font-size:15px;color:var(--acc2)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .card .name{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;color:var(--acc);font-weight:600}
+  .card .desc{font-size:13px;color:var(--muted);margin-top:4px}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:12px;padding:14px;overflow-x:auto;font-size:13px;line-height:1.6;margin:10px 0}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;color:#d8e2f0}
+  li{margin:6px 0}
+  ul,ol{padding-left:20px}
+  .list li{color:var(--muted)}
+  .list li strong{color:var(--fg)}
+  table{width:100%;border-collapse:collapse;margin:8px 0}
+  th,td{padding:8px 10px;text-align:left;vertical-align:top;font-size:13px}
+  td code{font-size:12.5px;color:var(--acc)}
+  tr:nth-child(odd) td{background:rgba(255,255,255,.02)}
+  .warn{background:rgba(224,64,251,.08);border-left:3px solid var(--acc);padding:10px 14px;border-radius:6px;font-size:13px;margin:12px 0}
+  .ok{background:rgba(57,208,200,.08);border-left:3px solid var(--acc2);padding:10px 14px;border-radius:6px;font-size:13px;margin:12px 0}
+  .footer{color:var(--muted);font-size:12px;margin-top:40px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>PID-Kit · so benutzt du es</h1>
+    <p>Ein File, sechs Befehle. Du sagst wo du hin willst &mdash; die Datei sorgt dafür, dass du dort landest.</p>
+    <span class="tag">Python &middot; PyBricks &middot; SPIKE Prime</span>
+  </header>
+
+  <h2>1. Loslegen in 4 Schritten</h2>
+  <ol>
+    <li><strong>PyBricks Code</strong> öffnen → <strong>+</strong> → neues Python-File → Name vergeben.</li>
+    <li>Den gesamten Inhalt von <code>src/PID.py</code> hineinpasten.</li>
+    <li>Unter <code>def mission():</code> deinen Weg schreiben (oder erstmal <code>demo()</code> stehen lassen).</li>
+    <li><strong>Run</strong> drücken. <code>main()</code> startet automatisch und garantiert <code>stop_all()</code> bei jedem Fehler.</li>
+  </ol>
+  <div class="ok">Laptop-Import funktioniert ohne Hub: die Datei lädt nicht und bewegt nichts &mdash; ideal für Tests auf dem PC.</div>
+
+  <h2>2. Die Befehle (mit Einheiten)</h2>
+  <div class="grid">
+    <div class="card"><div class="name">motors_pid(h, s, cm)</div><div class="desc">Fahren mit gyro-Kurskorrektur. <code>h</code> = Grad · <code>s</code> = mm/s (<code>-</code> = Rückwärts) · <code>cm</code> = cm (immer positiv)</div></div>
+    <div class="card"><div class="name">ausrichten1(h) / ausrichten2(h)</div><div class="desc">An Ort drehen, absolut. 1 = sanft, 2 = schnell. Kürzester Weg, ±180°.</div></div>
+    <div class="card"><div class="name">motors_kurve1(h, s, d)</div><div class="desc">Fahren &amp; drehen bis Zielwinkel. <code>d</code> = Körperrotation in Grad/s (kein Prozent!)</div></div>
+    <div class="card"><div class="name">timed_straight(dps, ms)</div><div class="desc">Geradeaus für eine feste Zeit. Für "schieben bis etwas passiert".</div></div>
+    <div class="card"><div class="name">stop_all()</div><div class="desc">Bremst Räder + beide Module, auch wenn ein Motor abgesteckt ist.</div></div>
+    <div class="card"><div class="name">wait_for_start()</div><div class="desc">Wartet auf frische Rechts- &rarr; Links-Taste, ohne die CPU zu versengen.</div></div>
+  </div>
+
+  <h2>3. Mini-Mission als Vorlage</h2>
+  <pre><code>def mission():
+    wait_for_start()
+    motors_pid(0, 400, 40)          # 40 cm gerade, Kurs 0°
+    ausrichten2(90)                 # kürzeste Drehung auf 90°
+    motors_pid(90, 400, 30)        # 30 cm weiter, noch 90°
+    motors_pid(90, -200, 20)       # 20 cm zurück, noch 90°
+    ausrichten2(0)                 # um 180° zurückdrehen
+    motors_pid(0, 0, 0)            # (sicherheitshalber)</code></pre>
+
+  <div class="warn">
+    <strong>Einheiten sind keine Kleinigkeit:</strong> <code>amount</code> = <strong>cm</strong>, immer positiv · Drehwinkel = <strong>Grad, absolut</strong> · Speed = <strong>mm/s</strong> · Rückwärts über <strong>negatives Speed</strong> · Drehrate = <strong>Körper-deg/s</strong>, nie ein Prozentwert.
+  </div>
+
+  <h2>4. Einstellungen (oben im File)</h2>
+  <table>
+    <tr><th>Wert</th><th>Sinn</th><th>Status</th></tr>
+    <tr><td><code>WHEEL_DIAMETER_MM = 49.5</code></td><td>Radgröße für Encoder/Speed</td><td>gemessen 2026-11-04</td></tr>
+    <tr><td><code>AXLE_TRACK_MM = 80.0</code></td><td>Abstand der Räder</td><td>gemessen 2026-11-04</td></tr>
+    <tr><td><code>LEFT_PORT / RIGHT_PORT / …</code></td><td>Sensoren/Motor-Ports</td><td>gemessen, aus der Paste</td></tr>
+    <tr><td><code>HEADING_KP / KD</code></td><td>Steuerungs-Gains</td><td>aus der Paste übernommen</td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:13px">Alles andere (Ports, Toleranzen, Limits) steht mit Notiz daneben dran, ob es gemessen oder geschätzt ist. Schätzwerte niemals einstellen, weil "es passt besser" — zuerst messen.</p>
+
+  <h2>5. Don't touch</h2>
+  <ul class="list">
+    <li><strong><code>HeadingPID</code>, <code>Motion</code>, <code>configure</code>, <code>setup_hardware</code>, <code>wait</code>, <code>stop_all</code></strong> &mdash; Kontrollgesetz + Inbetriebnahme. Änderungen ändern das Steuerungsverhalten.</li>
+    <li><strong>Sicherheitsnetz</strong> &mdash; "wird schon" ist keine Strategie. Ist irgendetwas nach 10 s ohne Fortschritt, wirft die Datei einen Fehler und stoppt alles.</li>
+  </ul>
+
+  <h2>6. Was es nicht kann</h2>
+  <p>Keine Linienverfolgung, keine Sensoren, keine Rückmeldung außer Heading/Encoder-Distanz. Brauchst du etwas Reaktives (Ultraschall &lt; X cm), fügst du den Sensor in <code>setup_hardware()</code> ein und fragst ihn in <code>mission()</code> in einer Schleife ab:</p>
+  <pre><code>from pybricks.pupdevices import UltrasonicSensor
+from pybricks.parameters import Port
+
+# in setup_hardware():
+sonar = UltrasonicSensor(Port.C)
+
+# in mission():
+while sonar.distance() > 120:
+    motors_pid(0, 300, 5)    # 5 cm vorwärts und neu prüfen</code></pre>
+
+  <div class="ok">
+    <strong>Golden Rule:</strong> amount = cm, Speed = mm/s, Drehwinkel = Grad. amount immer positiv &mdash; Rückwärts über negativen Speed. Jede PID-Bewegung bremst automatisch, du kannst sie also direkt hintereinander schreiben.
+  </div>
+
+  <div class="footer">Erzeugt 2026-11-04 &middot; Felix &amp; Fabian &middot; <code>docs/Attachments/PID-Usage.html</code></div>
+</div>
+</body>
+</html>
